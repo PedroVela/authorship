@@ -50,7 +50,7 @@ def init_store(project):
     return store
 
 
-def replay(project, name="qr_session"):
+def replay(project, name="qr_session", on_step=None):
     """Replay fixtures/<name>/events.json into project. Returns the Store."""
     with open(os.path.join(FIXTURES, name, "events.json"), encoding="utf-8") as f:
         steps = json.load(f)["steps"]
@@ -74,8 +74,23 @@ def replay(project, name="qr_session"):
             cmd = "session-start" if payload["hook_event_name"] == "SessionStart" else "hook"
             r = run_hook(project, payload, cmd)
             assert r.returncode == 0, r.stderr
+        if on_step:
+            on_step(store)
     return store
 
 
 def entries(store):
     return [e for _, _, e in ledger.read_entries(store) if e]
+
+
+def load_edges(name="qr_session"):
+    with open(os.path.join(FIXTURES, name, "edges.json"), encoding="utf-8") as f:
+        return json.load(f)["edges"]
+
+
+def confirm_edges(store, edges):
+    """Record each edge as a human confirmation, the way the viewer does."""
+    for e in edges:
+        target = ledger.find_entry(store, int(str(e["src"]).split(".")[0]))
+        ledger.write_confirm(store, target["seq"], target["hash"], None, "accept",
+                             "edge:%s:%s:%s" % (e["src"], e["type"], e["dst"]))
