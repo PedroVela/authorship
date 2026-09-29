@@ -1,0 +1,65 @@
+{
+ "description": "Human-confirmed edges for the QR fixture. Loaded with source='confirmed'.",
+ "edges": [
+  {
+   "src": "13",
+   "dst": "4",
+   "type": "derived_from"
+  },
+  {
+   "src": "13",
+   "dst": "11",
+   "type": "derived_from"
+  },
+  {
+   "src": "11",
+   "dst": "4",
+   "type": "refines"
+  },
+  {
+   "src": "11",
+   "dst": "3.2",
+   "type": "rejects"
+  },
+  {
+   "src": "4",
+   "dst": "3.3",
+   "type": "modifies"
+  },
+  {
+   "src": "4",
+   "dst": "2",
+   "type": "responds_to"
+  },
+  {
+   "src": "3.3",
+   "dst": "2",
+   "type": "responds_to"
+  },
+  {
+   "src": "5",
+   "dst": "4",
+   "type": "implements"
+  },
+  {
+   "src": "6",
+   "dst": "4",
+   "type": "objects_to"
+  },
+  {
+   "src": "7",
+   "dst": "4",
+   "type": "implements"
+  },
+  {
+   "src": "8",
+   "dst": "4",
+   "type": "supports"
+  },
+  {
+   "src": "12",
+   "dst": "11",
+   "type": "implements"
+  }
+ ]
+}

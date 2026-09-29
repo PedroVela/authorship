@@ -1,0 +1,266 @@
+{
+ "description": "QR payment reconciliation session (spec section 8). Steps are replayed in order by tests/harness.py.",
+ "steps": [
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-opus-5-5"
+   }
+  },
+  {
+   "transcript": [
+    {
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "#stage Exploration #problem reconciliation of QR payments takes 40 s because the bank is queried one by one"
+     }
+    }
+   ]
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "#stage Exploration #problem reconciliation of QR payments takes 40 s because the bank is queried one by one"
+   }
+  },
+  {
+   "transcript": [
+    {
+     "type": "assistant",
+     "message": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "Three ways to cut the reconciliation time:\n\n1. Batch per lot: query the bank once per settlement lot instead of once per payment.\n2. Bank webhook: let the bank push each settled payment to us.\n3. TTL cache: cache the bank's statement for 30 s and reconcile against the cache.\n\nWhich one do you want?"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+   }
+  },
+  {
+   "transcript": [
+    {
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "#idea instead of TTL, invalidate by the statement sequence number"
+     }
+    }
+   ]
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "#idea instead of TTL, invalidate by the statement sequence number"
+   }
+  },
+  {
+   "write_file": {
+    "path": "src/recon.py",
+    "content": "def reconcile(statement, cache):\n    seq = statement.sequence\n    if cache.get('seq') == seq:\n        return cache['result']\n    return None\n"
+   }
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_use_id": "t5",
+    "tool_input": {
+     "file_path": "{project}/src/recon.py",
+     "content": "def reconcile(statement, cache):\n    seq = statement.sequence\n    if cache.get('seq') == seq:\n        return cache['result']\n    return None\n"
+    },
+    "tool_response": {
+     "type": "create",
+     "filePath": "{project}/src/recon.py"
+    }
+   }
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "PostToolUseFailure",
+    "tool_name": "Bash",
+    "tool_use_id": "t6",
+    "tool_input": {
+     "command": "pytest -q tests/test_recon.py",
+     "description": "Run recon tests"
+    },
+    "error": "Exit code 1\nF..\nFAILED tests/test_recon.py::test_cache_invalidates_on_new_sequence\n1 failed, 2 passed in 0.08s"
+   }
+  },
+  {
+   "write_file": {
+    "path": "src/recon.py",
+    "content": "def reconcile(statement, cache):\n    seq = statement.sequence\n    if cache.get('seq') == seq:\n        return cache['result']\n    result = statement.fetch_detail()\n    cache.update(seq=seq, result=result)\n    return result\n"
+   }
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_use_id": "t7",
+    "tool_input": {
+     "file_path": "{project}/src/recon.py",
+     "old_string": "return None",
+     "new_string": "result = statement.fetch_detail()\n    cache.update(seq=seq, result=result)\n    return result"
+    },
+    "tool_response": {
+     "filePath": "{project}/src/recon.py"
+    }
+   }
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_use_id": "t8",
+    "tool_input": {
+     "command": "pytest -q tests/test_recon.py",
+     "description": "Run recon tests"
+    },
+    "tool_response": {
+     "stdout": "...\n3 passed in 0.07s",
+     "stderr": "",
+     "interrupted": false
+    }
+   }
+  },
+  {
+   "transcript": [
+    {
+     "type": "assistant",
+     "message": {
+      "role": "assistant",
+      "content": [
+       {
+        "type": "text",
+        "text": "Done: the cache is now invalidated when the statement sequence number changes. All 3 tests pass."
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "Stop",
+    "stop_hook_active": false
+   }
+  },
+  {
+   "note": {
+    "text": "#discard Bloom filter on transaction IDs: false positives lose payments",
+    "author": "inventor"
+   }
+  },
+  {
+   "transcript": [
+    {
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "#stage Prototype #decision long-poll the sequence endpoint every 2 s, not the webhook, because the bank does not sign webhooks"
+     }
+    }
+   ]
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "#stage Prototype #decision long-poll the sequence endpoint every 2 s, not the webhook, because the bank does not sign webhooks"
+   }
+  },
+  {
+   "write_file": {
+    "path": "src/poller.py",
+    "content": "import time\n\ndef poll(bank, last_seq, interval=2.0):\n    while True:\n        seq = bank.statement_sequence()\n        if seq != last_seq:\n            return seq\n        time.sleep(interval)\n"
+   }
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Write",
+    "tool_use_id": "t12",
+    "tool_input": {
+     "file_path": "{project}/src/poller.py",
+     "content": "import time\n\ndef poll(bank, last_seq, interval=2.0):\n    while True:\n        seq = bank.statement_sequence()\n        if seq != last_seq:\n            return seq\n        time.sleep(interval)\n"
+    },
+    "tool_response": {
+     "type": "create",
+     "filePath": "{project}/src/poller.py"
+    }
+   }
+  },
+  {
+   "transcript": [
+    {
+     "type": "user",
+     "message": {
+      "role": "user",
+      "content": "#claim method that detects the absence of new transactions by comparing a monotonic statement counter, without downloading the detail"
+     }
+    }
+   ]
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "#claim method that detects the absence of new transactions by comparing a monotonic statement counter, without downloading the detail"
+   }
+  },
+  {
+   "hook": {
+    "session_id": "qr-s1",
+    "transcript_path": "{transcript}",
+    "cwd": "{project}",
+    "hook_event_name": "SessionEnd",
+    "reason": "prompt_input_exit"
+   }
+  }
+ ]
+}
