@@ -472,7 +472,9 @@ def run_once(store, provider=None, cfg=None):
         else:
             out["tier1"] = run_tier1(store, entries, read_annotations(store), provider=provider, cfg=cfg)
             out["tier1_state"] = "on"
-    index.update(store).close()
+    conn = index.update(store)
+    index.store_status(conn, ledger.verify(store), len(index.review_queue(conn)))
+    conn.close()
     return out
 
 

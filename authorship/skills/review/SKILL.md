@@ -1,0 +1,17 @@
+---
+name: review
+description: Show the queue of machine suggestions (milestones and lineage edges) that wait for the human's confirmation, and point to the viewer where the human confirms them. Use when the user asks what needs review or confirmation.
+allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/index.py review-queue*), mcp__plugin_authorship_authorship__get_node
+---
+
+1. Print the queue:
+
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/index.py review-queue --project "${CLAUDE_PROJECT_DIR}"
+   ```
+
+2. For each item, give one line: the entry (`#seq`), the suggested label in plain words, the score, and, when useful, the entry's text from `get_node`. Group AI-origin suggestions first.
+
+3. Tell the user that confirmations are theirs to make, in the viewer: they run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/viewer.py open` in their own terminal (outside Claude Code) and use the Review tab. Accept, reject or edit each item there.
+
+You never confirm, reject or edit a suggestion yourself, and you never contact the viewer.

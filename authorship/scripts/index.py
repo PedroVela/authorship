@@ -90,7 +90,7 @@ class Engine(object):
         tags = e.get("tags") or []
         if e.get("stage"):
             s["stage"] = e["stage"]
-        stage = s["stage"] if actor != "system" else None
+        stage = s["stage"] if actor != "system" and ev != "Confirm" else None
         text = rules.entry_text(e, self.store)
         self.conn.execute(
             "INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -295,6 +295,13 @@ def update(store, conn=None, rebuild=False):
         _set_meta(conn, "engine", engine.s)
         recompute(conn, store)
     return conn
+
+
+def store_status(conn, chain, review_count):
+    """Cache chain status and queue size for the status line (which reads only head.json and this)."""
+    with conn:
+        _set_meta(conn, "chain", {k: chain.get(k) for k in ("ok", "entries", "head", "broken_at", "sealed_upto", "unsealed")})
+        _set_meta(conn, "review_count", review_count)
 
 
 # ---------------------------------------------------------------------------

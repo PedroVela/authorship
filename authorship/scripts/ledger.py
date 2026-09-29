@@ -765,7 +765,8 @@ def verify(store, check_blobs=True):
         expected_seq += 1
         v = str(e.get("v"))
         result["versions"][v] = result["versions"].get(v, 0) + 1
-        if e.get("event") == "Anchor" and isinstance(e.get("anchored_seq"), int):
+        if e.get("event") == "Anchor" and isinstance(e.get("anchored_seq"), int) and (
+                e.get("status") == "complete" or "rfc3161" in (e.get("completed_methods") or [])):
             result["sealed_upto"] = max(result["sealed_upto"], e["anchored_seq"])
     result["entries"] = count
     result["head"] = head
