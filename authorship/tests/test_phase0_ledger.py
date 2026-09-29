@@ -251,3 +251,15 @@ def test_stop_takes_unflushed_final_message_from_payload_once(project):
     es = [e for e in entries(store) if e["event"] == "Stop"]
     assert es[0]["text"] == "working on it\n\nall done" and es[0]["n_blocks"] == 2
     assert es[1]["n_blocks"] == 0
+
+
+def test_verify_blob_cache_still_catches_tampering(qr):
+    cache = {}
+    assert ledger.verify(qr, blob_cache=cache)["ok"] and cache
+    e = entries(qr)[4]
+    p = qr.blob_path(e["input"]["blob"])
+    data = open(p, "rb").read()
+    time.sleep(0.01)
+    open(p, "wb").write(data[:-1] + b"X")
+    res = ledger.verify(qr, blob_cache=cache)
+    assert not res["ok"] and res["broken_at"] == 5

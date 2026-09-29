@@ -458,7 +458,7 @@ def run_tier1(store, entries, anns, provider=None, cfg=None):
 # ---------------------------------------------------------------------------
 
 
-def run_once(store, provider=None, cfg=None):
+def run_once(store, provider=None, cfg=None, blob_cache=None):
     entries = [e for _, _, e in ledger.read_entries(store) if e]
     anns = read_annotations(store)
     out = {"tier0": run_tier0(store, entries, anns), "tier1": 0, "tier1_state": "off"}
@@ -473,7 +473,7 @@ def run_once(store, provider=None, cfg=None):
             out["tier1"] = run_tier1(store, entries, read_annotations(store), provider=provider, cfg=cfg)
             out["tier1_state"] = "on"
     conn = index.update(store)
-    index.store_status(conn, ledger.verify(store), len(index.review_queue(conn)))
+    index.store_status(conn, ledger.verify(store, blob_cache=blob_cache), len(index.review_queue(conn)))
     conn.close()
     return out
 
@@ -483,7 +483,7 @@ def daemon(store, interval=2.0, idle_exit_s=12 * 3600):
     os.makedirs(store.run, exist_ok=True)
     with open(pidfile, "w") as f:
         f.write(str(os.getpid()))
-    last_sig, idle_since, warned = None, time.time(), set()
+    last_sig, idle_since, warned, blob_cache = None, time.time(), set(), {}
     try:
         while store.exists():
             try:
@@ -493,7 +493,7 @@ def daemon(store, interval=2.0, idle_exit_s=12 * 3600):
                 sig = None
             if sig != last_sig:
                 try:
-                    res = run_once(store)
+                    res = run_once(store, blob_cache=blob_cache)
                     if res["tier1_state"] in ("no-key", "no-consent") and res["tier1_state"] not in warned:
                         store.log_error("annotator", RuntimeError(
                             "AUTHORSHIP_JEV=1 but Tier 1 is %s; run `annotator.py consent` in a terminal" % res["tier1_state"]))

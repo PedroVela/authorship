@@ -729,8 +729,12 @@ def iter_blob_refs(obj):
                 yield x
 
 
-def verify(store, check_blobs=True):
-    """Walk the chain. Returns a dict: ok, entries, head, broken_at, reason."""
+def verify(store, check_blobs=True, blob_cache=None):
+    """Walk the chain. Returns a dict: ok, entries, head, broken_at, reason.
+
+    blob_cache, when given, is a dict {sha: (size, mtime_ns)} of blobs already
+    hashed; a blob is re-hashed only when its size or mtime changed. The
+    annotator daemon uses it so periodic checks stay cheap."""
     prev, expected_seq, count, head = GENESIS, 1, 0, None
     result = {"ok": True, "entries": 0, "head": None, "broken_at": None, "reason": None,
               "versions": {}, "sealed_upto": 0}
@@ -751,13 +755,20 @@ def verify(store, check_blobs=True):
         elif check_blobs:
             for sha in iter_blob_refs(e):
                 path = store.blob_path(sha)
-                if not os.path.exists(path):
+                try:
+                    st = os.stat(path)
+                except OSError:
                     fail = "missing blob %s" % sha[:12]
                     break
+                sig = (st.st_size, st.st_mtime_ns)
+                if blob_cache is not None and blob_cache.get(sha) == sig:
+                    continue
                 with open(path, "rb") as f:
                     if sha256_bytes(f.read()) != sha:
                         fail = "blob %s content does not match its hash" % sha[:12]
                         break
+                if blob_cache is not None:
+                    blob_cache[sha] = sig
             if not fail and e.get("text") is not None and e.get("sha256") and sha256_text(e["text"]) != e["sha256"]:
                 fail = "inline text does not match sha256"
         if fail:
