@@ -824,7 +824,7 @@ def default_author():
     return None
 
 
-def write_note(store, text, author=None, session=None, extra_tags=None):
+def write_note(store, text, author=None, session=None, extra_tags=None, extra=None):
     tags, stage = parse_tags(text)
     for t in extra_tags or []:
         if t not in tags:
@@ -833,6 +833,7 @@ def write_note(store, text, author=None, session=None, extra_tags=None):
     if stage:
         fields["stage"] = stage
     fields.update(text_fields(store, text))
+    fields.update(extra or {})
     return append(store, "ManualNote", "human", session, fields)
 
 

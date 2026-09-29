@@ -1,0 +1,48 @@
+version = "milestones-v1"
+model = "jev-1.13.0"          # pinned; never "latest"
+state = ["entry", "previous_ai_response", "open_ideas"]
+
+[questions.new_element]
+type = "noul"
+ask = "Does the human introduce a technical element absent from prior context?"
+
+[questions.stance]
+type = "choice"
+ask = "What is the human's stance toward the prior context, especially the previous AI response?"
+options = ["originates", "extends", "modifies", "accepts", "rejects", "unrelated"]
+
+[questions.stance.criteria]
+originates = "The human states a technical element that nothing in the prior context proposed."
+extends = "The human builds on an earlier element and adds to it without changing it."
+modifies = "The human takes an earlier element and changes how it works."
+accepts = "The human adopts an earlier element (for example an AI option) as proposed."
+rejects = "The human turns down an earlier element."
+unrelated = "The entry does not take a position on any technical element."
+
+[questions.maturity]
+type = "score"
+ask = "How definite and operative is the human's idea in this entry?"
+levels = ["goal", "approach", "mechanism", "operative_spec"]
+
+[questions.response_act]
+type = "choice"
+on = ["Stop"]
+ask = "What does this AI response do?"
+options = ["implements_instruction", "offers_alternatives", "unprompted_mechanism", "explains", "asks"]
+
+[questions.response_act.criteria]
+implements_instruction = "Carries out what the human asked, without new technical ideas."
+offers_alternatives = "Lays out numbered alternatives for the human to choose from."
+unprompted_mechanism = "Introduces a technical mechanism the human did not ask for."
+explains = "Explains or reports, without proposing anything."
+asks = "Asks the human a question."
+
+[questions.kills_approach]
+type = "noul"
+on = ["PostToolUseFailure"]
+ask = "Does this failure show that the approach being tried cannot work, rather than a fixable bug?"
+
+[rules]
+conception_candidate = "new_element >= 0.80 and stance in [originates, modifies, rejects] and p(stance) >= 0.70 and maturity_delta >= 1"
+ai_origin_flag = "stance == accepts and p >= 0.50 or response_act == unprompted_mechanism and p >= 0.50"
+review_band = [0.50, 0.80]
