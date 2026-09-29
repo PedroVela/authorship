@@ -29,6 +29,7 @@ TAG_RULES = [
 ]
 HUMAN_DECLARED = ("claim_candidate", "decision_with_reason", "problem_fixed", "discard_with_reason", "conception",
                   "stage_opened")
+FACTUAL = ("session_boundary",)  # structural facts, not opinions: nothing to confirm
 
 
 def human_ibis(tags):

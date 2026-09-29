@@ -239,3 +239,15 @@ def test_torn_tail_is_repaired_without_touching_complete_entries(project):
     assert open(store.ledger, "rb").read().startswith(good)
     assert ledger.verify(store)["ok"] and ledger.verify(store)["entries"] == 2
     assert "torn-tail" in open(store.errors).read()
+
+
+def test_stop_takes_unflushed_final_message_from_payload_once(project):
+    store = harness.init_store(project)
+    t = os.path.join(project, "t.jsonl")
+    _say(t, "working on it")
+    _stop(project, t, last_assistant_message="all done")  # final text not in the transcript yet
+    _say(t, "all done")
+    _stop(project, t)
+    es = [e for e in entries(store) if e["event"] == "Stop"]
+    assert es[0]["text"] == "working on it\n\nall done" and es[0]["n_blocks"] == 2
+    assert es[1]["n_blocks"] == 0

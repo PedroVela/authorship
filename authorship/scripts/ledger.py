@@ -567,8 +567,11 @@ def _stop_locked(store, p, event, sid, subagent, tp, key):
             continue
         blocks.append(t)
         seen.append(h)
+    # The transcript can lag behind the Stop hook: the final message may not be
+    # flushed yet. Take it from the payload; the sha set keeps it from being
+    # recorded again when the transcript catches up.
     last = p.get("last_assistant_message")
-    if not blocks and isinstance(last, str) and last.strip():
+    if isinstance(last, str) and last.strip():
         h = sha256_text(last)
         if h not in seen:
             blocks.append(last)

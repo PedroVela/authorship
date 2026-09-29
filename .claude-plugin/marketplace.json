@@ -1,0 +1,14 @@
+{
+  "name": "authorship-dev",
+  "description": "Local marketplace for the authorship ledger plugin.",
+  "owner": {
+    "name": "Authorship contributors"
+  },
+  "plugins": [
+    {
+      "name": "authorship",
+      "source": "./authorship",
+      "description": "Tamper-evident record of how a human and Claude co-develop an invention."
+    }
+  ]
+}

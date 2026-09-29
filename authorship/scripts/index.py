@@ -233,8 +233,8 @@ def recompute(conn, store):
                 confirmed = 1
                 if decision[0] == "edit" and decision[1].startswith("milestone:"):
                     typ = decision[1].split(":", 1)[1]
-            elif tier == 0 and typ in rules.HUMAN_DECLARED:
-                confirmed = 1  # declared by the human through a tag
+            elif tier == 0 and (typ in rules.HUMAN_DECLARED or typ in rules.FACTUAL):
+                confirmed = 1  # declared by the human through a tag, or a structural fact
             else:
                 confirmed = 0
             conn.execute("INSERT INTO milestones VALUES(?,?,?,?,?,?,?)",
