@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Authorship ledger</title>
+<link rel="stylesheet" href="app.css">
+<!-- app.js runs first: it moves the #k= secret out of the URL before anything else loads.
+     Deferred scripts execute in document order; the app starts on DOMContentLoaded. -->
+<script src="app.js" defer></script>
+<script src="vendor/cytoscape.min.js" defer></script>
+<script src="vendor/elk.bundled.js" defer></script>
+<script src="vendor/cytoscape-elk.js" defer></script>
+<script src="vendor/cytoscape-expand-collapse.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="brand">
+    <h1>Authorship ledger</h1>
+    <span class="project" id="project"></span>
+  </div>
+  <div class="top-right">
+    <span class="badge" id="chain-badge" role="status" aria-live="polite">Loading…</span>
+    <span class="sync" id="sync" aria-live="off"></span>
+    <a class="report-link" href="/api/report.md" target="_blank" rel="noopener">Report (.md)</a>
+  </div>
+</header>
+<div class="banner danger" id="broken-banner" role="alert" hidden></div>
+<div class="banner notice" id="notice" role="status" hidden></div>
+
+<nav class="tabs" role="tablist" aria-label="Views" id="tabs">
+  <button role="tab" id="tab-stages" data-view="stages" aria-controls="panel-stages" aria-selected="true">Stages</button>
+  <button role="tab" id="tab-reasoning" data-view="reasoning" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Reasoning</button>
+  <button role="tab" id="tab-genealogy" data-view="genealogy" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Genealogy</button>
+  <button role="tab" id="tab-branches" data-view="branches" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Branches</button>
+  <button role="tab" id="tab-replay" data-view="replay" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Replay</button>
+  <button role="tab" id="tab-review" data-view="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">Review <span class="count" id="review-count"></span></button>
+</nav>
+
+<main id="main">
+  <section id="panel-stages" class="panel" role="tabpanel" aria-labelledby="tab-stages">
+    <p class="hint">One column per stage, in ledger order. Expand an entry for its full text or diff. Discarded approaches branch off as dead ends.</p>
+    <div class="stages" id="stages"></div>
+  </section>
+
+  <section id="panel-graph" class="panel" role="tabpanel" aria-labelledby="tab-reasoning" hidden>
+    <div class="toolbar" id="toolbar">
+      <div class="tool-group" id="tools-reasoning">
+        <button type="button" id="btn-fit">Fit</button>
+        <button type="button" id="btn-collapse">Collapse options</button>
+        <button type="button" id="btn-expand">Expand options</button>
+      </div>
+      <div class="tool-group" id="tools-replay" hidden>
+        <label for="replay-view">Replay in</label>
+        <select id="replay-view">
+          <option value="reasoning">Reasoning</option>
+          <option value="genealogy">Genealogy</option>
+          <option value="branches">Branches</option>
+        </select>
+      </div>
+      <div class="replay" id="replay-bar" role="group" aria-label="Replay over time">
+        <button type="button" id="rp-play" aria-label="Play">▶</button>
+        <button type="button" id="rp-prev" aria-label="Previous turn">‹</button>
+        <input type="range" id="rp-slider" min="0" max="0" step="1" value="0" aria-label="Show entries up to seq">
+        <button type="button" id="rp-next" aria-label="Next turn">›</button>
+        <button type="button" id="rp-live">Latest</button>
+        <output id="rp-label" for="rp-slider"></output>
+      </div>
+    </div>
+    <div class="graph-body">
+      <div class="canvas-wrap">
+        <div id="cy" class="cy" tabindex="0" aria-label="Graph. Use arrow keys to pan, plus and minus to zoom."></div>
+        <div id="lane-labels" class="lane-labels" aria-hidden="true"></div>
+        <div id="branches" class="branches" tabindex="0" aria-label="Branches graph" hidden></div>
+        <div class="legend" id="legend" aria-label="Legend">
+          <span><i class="sh human"></i>Human</span>
+          <span><i class="sh ai"></i>AI</span>
+          <span><i class="sh dead"></i>Discarded / rejected</span>
+          <span><i class="ln solid"></i>Relation</span>
+          <span><i class="ln neg"></i>Objects to / rejects</span>
+          <span><i class="ln lineage"></i>Modifies / refines / derived from</span>
+          <span><i class="ln ok"></i>Implements / supports</span>
+          <span><i class="ln faint"></i>Suggested (unconfirmed)</span>
+          <span class="gen-only"><i class="sh lin"></i>Lineage</span>
+          <span class="br-only"><i class="ln ok"></i>Merge: approach adopted</span>
+          <span class="br-only"><b class="x">✗</b>Dead end, with its reason</span>
+        </div>
+      </div>
+      <aside class="side" id="side">
+        <section class="gen" id="gen-panel" hidden aria-labelledby="gen-h">
+          <h2 id="gen-h">Genealogy</h2>
+          <label for="gen-claim">Claim</label>
+          <select id="gen-claim"></select>
+          <label class="check"><input type="checkbox" id="gen-confirmed"> Confirmed edges only</label>
+          <div id="gen-summary" class="gen-summary" aria-live="polite"></div>
+        </section>
+        <section class="detail" id="detail" aria-live="polite">
+          <p class="hint">Select a node to see its entry.</p>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+  <section id="panel-review" class="panel" role="tabpanel" aria-labelledby="tab-review" hidden>
+    <p class="hint" id="review-hint">Tier 1 suggestions waiting for your decision. Each decision is written to the ledger as a <code>Confirm</code> entry signed by you.</p>
+    <p class="banner notice" id="readonly-hint" hidden>Read-only. Open the viewer from your terminal: <code>python3 &lt;plugin&gt;/scripts/viewer.py open</code></p>
+    <div id="review-recorded" class="review-recorded" role="status" aria-live="polite"></div>
+    <ol class="review" id="review"></ol>
+    <h2 class="sub">Recent confirmations</h2>
+    <ol class="confirms" id="confirms"></ol>
+  </section>
+</main>
+</body>
+</html>
