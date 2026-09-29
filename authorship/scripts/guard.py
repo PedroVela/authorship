@@ -223,6 +223,8 @@ def check_destructive(verb, seg, paths, here, auth):
         return
     if verb in ("cp", "tar", "zip", "dd", "ln"):
         return  # only dangerous when a path resolves into the store, handled above
+    if verb == "mv" and len(paths) >= 2:
+        paths = paths[:-1]  # moving something into an ancestor directory is harmless; moving the ancestor is not
     for t in paths:
         if GLOB_CHARS & set(t):
             continue

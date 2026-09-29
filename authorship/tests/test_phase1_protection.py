@@ -82,6 +82,7 @@ CASES = [
     (A, "Bash", {"command": "rm -rf build dist node_modules"}),
     (A, "Bash", {"command": "rm -rf *"}),
     (A, "Bash", {"command": "mv src/app.py src/main.py"}),
+    (A, "Bash", {"command": "mv src/app.py ."}),
     (A, "Bash", {"command": "find . -name '*.pyc' -delete"}),
     (A, "Bash", {"command": "sed -i '' 's/a/b/' src/app.py"}),
     (A, "Bash", {"command": "echo hi > out.txt && tee log.txt < out.txt"}),
