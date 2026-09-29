@@ -47,7 +47,16 @@ Then:
 2. Optionally add the status line snippet `init` prints, for `authorship ✓ 214 | 12 unsealed | 3 to review`.
 3. Keep the repository private. Commit `.authorship/ledger.jsonl`, `blobs/`, `anchors/` and `annotations.jsonl`.
 
+No restart is needed. `init` also starts the viewer (it opens in your browser) and the annotator, and hands Claude the authorship protocol in the same session, so everything from the next prompt on is recorded and Claude follows the rules. Later sessions get the same through the SessionStart hook.
+
 Recording only happens in projects that have `.authorship/`.
+
+### Try it in five minutes
+
+1. `mkdir /tmp/demo && cd /tmp/demo && git init`, then `claude --plugin-dir /path/to/authorship` and `/authorship:init`.
+2. Prompt: `#problem reconciliation takes 40 s #idea invalidate the cache by the statement sequence number; write the code and a test, then run pytest`. Watch the viewer fill in.
+3. In another terminal: `python3 /path/to/authorship/scripts/ledger.py verify --project /tmp/demo` prints `ok: N entries`.
+4. Ask Claude to run `echo x >> .authorship/ledger.jsonl`: the guard answers `authorship guard: blocked` and records a `GuardBlock` entry.
 
 ## Daily use
 

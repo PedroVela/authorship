@@ -6,6 +6,8 @@
 - creates .authorship/ (ledger, blobs, anchors, run)
 - merges permission rules into .claude/settings.json
 - appends derived and runtime paths to .gitignore
+- starts the annotator and viewer now, and prints the authorship protocol, so
+  recording is complete in the current session without restarting it
 - prints the sandbox recommendation and a status line snippet
 """
 import json
@@ -82,12 +84,22 @@ def init(project):
             "chain": ledger.verify(store, check_blobs=False)}
 
 
+def activate(project):
+    """What SessionStart would have done: start the daemons, return the protocol text.
+    The session that runs init began before .authorship/ existed, so its
+    SessionStart hook did nothing; this makes restarting unnecessary."""
+    ledger.ensure_daemons(ledger.Store(project))
+    with open(os.path.join(ledger.SCRIPTS_DIR, "protocol.md"), encoding="utf-8") as f:
+        return f.read()
+
+
 def main(argv):
     as_json = "--json" in argv
     project = ledger.project_dir()
     if "--project" in argv:
         project = os.path.abspath(argv[argv.index("--project") + 1])
     res = init(project)
+    res["protocol"] = activate(project)
     if as_json:
         print(json.dumps(res))
         return 0
@@ -108,6 +120,11 @@ def main(argv):
     print(statusline_snippet())
     print()
     print("Keep this repository private: public disclosure before filing can destroy novelty.")
+    print()
+    print("Recording is on for this session; the viewer is starting (no restart needed).")
+    print("Authorship protocol, in effect from now on in this session:")
+    print()
+    print(res["protocol"].rstrip())
     return 0
 
 

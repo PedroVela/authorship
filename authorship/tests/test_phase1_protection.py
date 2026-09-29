@@ -205,6 +205,21 @@ def test_init_cli_prints_statusline_snippet(project):
     r = subprocess.run([sys.executable, os.path.join(SCRIPTS, "init_project.py"), "--project", project],
                        capture_output=True, text=True, env=harness.hook_env(project))
     assert r.returncode == 0 and '"statusLine"' in r.stdout and "sandbox" in r.stdout
+    protocol = open(os.path.join(SCRIPTS, "protocol.md")).read().rstrip()
+    assert r.stdout.rstrip().endswith(protocol) and "no restart needed" in r.stdout
+
+
+def test_init_starts_daemons_without_restart(project, monkeypatch):
+    started = []
+    monkeypatch.delenv("AUTHORSHIP_NO_DAEMONS", raising=False)
+    monkeypatch.setattr(ledger, "spawn_detached", lambda argv, env=None: started.append(os.path.basename(argv[1])))
+    init_project.init(project)
+    text = init_project.activate(project)
+    assert started == ["annotator.py", "viewer.py"]
+    assert text.startswith("This project records authorship for patent purposes.")
+    monkeypatch.setenv("AUTHORSHIP_NO_DAEMONS", "1")
+    init_project.activate(project)
+    assert len(started) == 2
 
 
 # --- human-only CLI --------------------------------------------------------
