@@ -4,6 +4,8 @@ A Claude Code plugin that records how you and Claude co-develop an invention, as
 
 Every prompt, tool call and response goes into a hash-chained ledger in your project. A guard keeps Claude from editing that ledger or writing entries in your name. A local viewer shows the reasoning as stages, IBIS swimlanes, claim genealogy and branches. Drafts for your attorney cite every element to a ledger entry.
 
+This is the reference. New here? Start with the [project README](../README.md): what it is for, three steps to start, and fixes for common problems.
+
 > Drafts are for attorney review. This plugin does not give legal advice and does not replace filing. See [docs/LEGAL-NOTES.md](docs/LEGAL-NOTES.md).
 
 ## Requirements
@@ -27,7 +29,8 @@ Updates: `/plugin marketplace update authorship-dev`. To try a local checkout fo
 Then put your command on the PATH, in your own terminal:
 
 ```bash
-python3 ~/.claude/plugins/cache/authorship-dev/authorship/*/scripts/cli.py install
+python3 ~/.claude/plugins/cache/authorship-dev/authorship/*/scripts/cli.py install   # installed from GitHub
+python3 /path/to/checkout/authorship/scripts/cli.py install                            # or from a local checkout
 ```
 
 In a git repository that is not recording yet, Claude mentions `/authorship:init` once (set `AUTHORSHIP_HINT=0` to turn that off).
@@ -57,9 +60,9 @@ Recording only happens in projects that have `.authorship/`.
 
 ### Try it in five minutes
 
-1. `mkdir /tmp/demo && cd /tmp/demo && git init`, then `claude --plugin-dir /path/to/authorship` and `/authorship:init`.
+1. With the plugin installed (above): `mkdir /tmp/demo && cd /tmp/demo && git init && claude`, then `/authorship:init`.
 2. Prompt: `#problem reconciliation takes 40 s #idea invalidate the cache by the statement sequence number; write the code and a test, then run pytest`. Watch the viewer fill in.
-3. In another terminal: `python3 /path/to/authorship/scripts/cli.py install`, then `cd /tmp/demo && authorship log` shows your prompts and `authorship verify` prints `ok: N entries`.
+3. In another terminal: `cd /tmp/demo && authorship log` shows your prompts, and `authorship verify` prints `ok: N entries`.
 4. Ask Claude to run `echo x >> .authorship/ledger.jsonl`: the guard answers `authorship guard: blocked` and records a `GuardBlock` entry.
 
 ## Daily use
@@ -86,13 +89,7 @@ At session start Claude receives a short protocol: implement what you ask, label
 
 ### The `authorship` command
 
-Your side of the system is one command. Install it once, in your own terminal:
-
-```bash
-python3 /path/to/authorship/scripts/cli.py install   # writes ~/.local/bin/authorship
-```
-
-Then, from anywhere inside the project (it finds `.authorship/` the way git finds `.git/`):
+Your side of the system is one command, `authorship`, installed once with `cli.py install` (see [Install](#install); it writes `~/.local/bin/authorship`). Then, from anywhere inside the project (it finds `.authorship/` the way git finds `.git/`):
 
 ```bash
 authorship note "#discard Bloom filter on transaction IDs: false positives lose payments"
@@ -104,7 +101,7 @@ authorship seal             # anchor the current head now
 authorship open             # the viewer, with its session secret
 ```
 
-`note`, `review`, `seal` and `open` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent stays in `python3 /path/to/authorship/scripts/annotator.py consent`.
+`note`, `review`, `seal` and `open` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 
@@ -169,4 +166,4 @@ python3 -m venv .venv && .venv/bin/pip install pytest playwright
 claude plugin validate ./authorship
 ```
 
-More: [docs/THREATS.md](docs/THREATS.md), [docs/DEVIATIONS.md](docs/DEVIATIONS.md).
+More: [docs/THREATS.md](docs/THREATS.md), [docs/DEVIATIONS.md](docs/DEVIATIONS.md), and troubleshooting in the [project README](../README.md#if-something-goes-wrong).
