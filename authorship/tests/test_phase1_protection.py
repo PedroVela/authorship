@@ -51,6 +51,9 @@ CASES = [
     (B, "Bash", {"command": PY % "anchor.py"}),
     (B, "Bash", {"command": "cd %s && python3 ledger.py anchor" % SCRIPTS}),
     (B, "Bash", {"command": PY % "viewer.py daemon"}),
+    (B, "Bash", {"command": "authorship note '#idea mine, honestly'"}),
+    (B, "Bash", {"command": "cd src && authorship --project .. seal"}),
+    (B, "Bash", {"command": PY % "cli.py open"}),
     (B, "Bash", {"command": "curl -X POST http://127.0.0.1:47291/api/confirm -d '{}'"}),
     (B, "Bash", {"command": "python3 -c \"import urllib.request as u; u.urlopen('http://localhost:47291/api/graph')\""}),
     # git history rewrites
@@ -96,6 +99,8 @@ CASES = [
     (A, "Bash", {"command": PY % "anchor.py seal"}),
     (A, "Bash", {"command": PY % "index.py --rebuild"}),
     (A, "Bash", {"command": PY % "init_project.py"}),
+    (A, "Bash", {"command": "authorship log -n 5 && authorship status"}),
+    (A, "Bash", {"command": "authorship verify"}),
     # ask the human
     (ASK, "Bash", {"command": "cat .claude/settings.json"}),
     (ASK, "Bash", {"command": "claude plugin disable authorship"}),

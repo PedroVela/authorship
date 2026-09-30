@@ -55,7 +55,7 @@ Recording only happens in projects that have `.authorship/`.
 
 1. `mkdir /tmp/demo && cd /tmp/demo && git init`, then `claude --plugin-dir /path/to/authorship` and `/authorship:init`.
 2. Prompt: `#problem reconciliation takes 40 s #idea invalidate the cache by the statement sequence number; write the code and a test, then run pytest`. Watch the viewer fill in.
-3. In another terminal: `python3 /path/to/authorship/scripts/ledger.py verify --project /tmp/demo` prints `ok: N entries`.
+3. In another terminal: `python3 /path/to/authorship/scripts/cli.py install`, then `cd /tmp/demo && authorship log` shows your prompts and `authorship verify` prints `ok: N entries`.
 4. Ask Claude to run `echo x >> .authorship/ledger.jsonl`: the guard answers `authorship guard: blocked` and records a `GuardBlock` entry.
 
 ## Daily use
@@ -80,18 +80,26 @@ Tags are normalized to English in `tags[]`; your text is stored exactly as typed
 
 At session start Claude receives a short protocol: implement what you ask, label its own mechanisms `AI proposal: ...`, number alternatives, never touch `.authorship/`, and cite entries as `#<seq>`. Claude can query the ledger through seven read-only MCP tools (`chain_status`, `search`, `get_node`, `lineage`, `open_ideas`, `discarded`, `milestones`).
 
-### Human-only commands
+### The `authorship` command
 
-Run these in your own terminal, not through Claude and not with `!` inside Claude Code (both are refused):
+Your side of the system is one command. Install it once, in your own terminal:
 
 ```bash
-PLUGIN=/path/to/authorship
-python3 $PLUGIN/scripts/ledger.py note "#discard Bloom filter on transaction IDs: false positives lose payments"
-python3 $PLUGIN/scripts/viewer.py open          # opens the viewer with its session secret
-python3 $PLUGIN/scripts/ledger.py verify --anchors
-python3 $PLUGIN/scripts/ledger.py anchor         # seal now, from your terminal
-python3 $PLUGIN/scripts/annotator.py consent     # only if you enable Tier 1 (Jev)
+python3 /path/to/authorship/scripts/cli.py install   # writes ~/.local/bin/authorship
 ```
+
+Then, from anywhere inside the project (it finds `.authorship/` the way git finds `.git/`):
+
+```bash
+authorship note "#discard Bloom filter on transaction IDs: false positives lose payments"
+authorship log              # recent prompts, notes and confirmations; --all for every entry, -n N
+authorship status           # authorship ✓ 214 | 12 unsealed | 3 to review
+authorship verify --anchors
+authorship seal             # anchor the current head now
+authorship open             # the viewer, with its session secret
+```
+
+`note`, `seal` and `open` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent stays in `python3 /path/to/authorship/scripts/annotator.py consent`.
 
 ### Skills
 

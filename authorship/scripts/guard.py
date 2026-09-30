@@ -25,6 +25,7 @@ from redact import redact  # noqa: E402
 FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 READ_TOOLS = ("Read", "Grep", "Glob")
 PROTECTED_SCRIPTS = ("ledger.py", "anchor.py", "viewer.py")
+CLI_HUMAN_ONLY = ("note", "seal", "open", "install", "review", "confirm", "consent")
 STORE_NAMES = ("ledger.jsonl", "head.json", "state.json", "annotations.jsonl", "errors.log",
                "viewer.secret", "viewer.port", "index.sqlite")
 DEFAULT_VIEWER_PORT = 47291
@@ -168,6 +169,11 @@ def check_bash(cmd, cwd, auth, store, project):
                 if base == "anchor.py" and seg[i + 1:] == ["seal"] and _real(t, here) == os.path.join(ledger.SCRIPTS_DIR, "anchor.py"):
                     continue  # the seal skill: timestamps the current head, writes no human entry
                 raise Block("Bash may not run %s (human-only CLI or viewer server)" % base)
+
+            if (i == 0 and base == "authorship") or base == "cli.py":
+                sub = next((x for x in seg[i + 1:] if x in CLI_HUMAN_ONLY), None)  # flags may come first
+                if sub:
+                    raise Block("Bash may not run `authorship %s` (human-only command)" % sub)
 
         # 4. Globs that would expand to .authorship.
         for t in seg[1:]:
