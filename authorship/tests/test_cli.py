@@ -83,3 +83,72 @@ def test_init_via_cli_and_hint(project):
     r = run_cli(["init"], cwd=project, AUTHORSHIP_NO_DAEMONS="1")
     assert r.returncode == 0 and os.path.isdir(os.path.join(project, ".authorship"))
     assert "cli.py\" install" in r.stdout
+
+
+# --- authorship review -------------------------------------------------------------------
+
+import io
+import json
+
+import annotator
+import index
+
+
+def with_suggestions(store):
+    annotator.run_once(store)
+    with open(store.annotations, "a") as f:
+        f.write(json.dumps({"id": "ann_t1", "ts": "2099-01-01T00:00:00.000Z", "target_seq": 4, "model": "jev-1.13.0",
+                            "questions_hash": "q", "answers": {}, "supersedes": None,
+                            "milestones": [{"type": "conception_candidate", "tier": 1, "score": 0.83}],
+                            "edges": [{"src": "4", "dst": "3.3", "type": "modifies", "p": 0.81}]}) + "\n")
+        f.write(json.dumps({"id": "ann_t2", "ts": "2099-01-01T00:00:00.000Z", "target_seq": 11, "model": "jev-1.13.0",
+                            "questions_hash": "q", "answers": {}, "supersedes": None, "edges": [],
+                            "milestones": [{"type": "ai_origin_element", "tier": 1, "score": 0.6}]}) + "\n")
+    return store
+
+
+def test_review_list_puts_unfavorable_first(qr):
+    with_suggestions(qr)
+    out = io.StringIO()
+    assert cli.cmd_review(qr, ["--list"], stdout=out) == 0
+    lines = out.getvalue().splitlines()
+    assert lines[0].startswith("#11") and "AI-origin element" in lines[0] and "0.60" in lines[0]
+    assert any("#4 modifies #3.3" in l and "0.81" in l for l in lines)
+    assert any("conception moment" in l for l in lines)
+
+
+def test_review_accept_reject_edit_write_confirm_entries(qr):
+    with_suggestions(qr)
+    before = len(entries(qr))
+    # order: #11 ai_origin (accept), #4 edge (reject), #4 conception (edit -> maturity jump)
+    answers = "a\nr\ne\nmilestone:maturity_jump\n"
+    out = io.StringIO()
+    assert cli.cmd_review(qr, [], stdin=io.StringIO(answers), stdout=out) == 0
+    new = entries(qr)[before:]
+    assert [(e["event"], e["actor"], e["decision"]) for e in new] == [
+        ("Confirm", "human", "accept"), ("Confirm", "human", "reject"), ("Confirm", "human", "edit")]
+    assert new[2]["edited_label"] == "milestone:maturity_jump" and new[1]["label"] == "edge:4:modifies:3.3"
+    assert "3 decision(s) recorded" in out.getvalue()
+    assert ledger.verify(qr)["ok"]
+    conn = index.update(qr)
+    assert index.review_queue(conn) == []
+    assert conn.execute("SELECT COUNT(*) FROM edges WHERE src='4' AND dst='3.3' AND source='annotation'").fetchone()[0] == 0
+
+
+def test_review_skip_quit_and_bad_edit_write_nothing(qr):
+    with_suggestions(qr)
+    before = len(entries(qr))
+    out = io.StringIO()
+    cli.cmd_review(qr, [], stdin=io.StringIO("x\ns\ne\nnot a label\nq\n"), stdout=out)
+    assert len(entries(qr)) == before
+    assert "a, r, e, s or q" in out.getvalue() and "not a valid label" in out.getvalue()
+
+
+def test_review_empty_queue(qr):
+    out = io.StringIO()
+    assert cli.cmd_review(qr, [], stdin=io.StringIO(""), stdout=out) == 0 and "Nothing to review" in out.getvalue()
+
+
+def test_review_refuses_claude(qr):
+    r = run_cli(["review", "--list"], cwd=qr.project, CLAUDECODE="1")
+    assert r.returncode == 3 and "human-only" in r.stderr

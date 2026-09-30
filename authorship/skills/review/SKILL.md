@@ -12,6 +12,6 @@ allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/index.py review-queue*
 
 2. For each item, give one line: the entry (`#seq`), the suggested label in plain words, the score, and, when useful, the entry's text from `get_node`. Group AI-origin suggestions first.
 
-3. Tell the user that confirmations are theirs to make, in the viewer: they run `authorship open` in their own terminal (outside Claude Code) and use the Review tab. Accept, reject or edit each item there.
+3. Tell the user that confirmations are theirs to make, in their own terminal (outside Claude Code): `authorship review` asks accept / reject / edit for each item. The viewer's Review tab (`authorship open`) does the same.
 
 You never confirm, reject or edit a suggestion yourself, and you never contact the viewer.

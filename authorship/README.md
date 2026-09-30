@@ -94,19 +94,20 @@ Then, from anywhere inside the project (it finds `.authorship/` the way git find
 authorship note "#discard Bloom filter on transaction IDs: false positives lose payments"
 authorship log              # recent prompts, notes and confirmations; --all for every entry, -n N
 authorship status           # authorship ✓ 214 | 12 unsealed | 3 to review
+authorship review           # confirm, reject or edit machine suggestions, one question each
 authorship verify --anchors
 authorship seal             # anchor the current head now
 authorship open             # the viewer, with its session secret
 ```
 
-`note`, `seal` and `open` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent stays in `python3 /path/to/authorship/scripts/annotator.py consent`.
+`note`, `review`, `seal` and `open` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent stays in `python3 /path/to/authorship/scripts/annotator.py consent`.
 
 ### Skills
 
 | Skill | What it does |
 |---|---|
 | `/authorship:init` | Set up the project (above) |
-| `/authorship:review` | List machine suggestions waiting for your confirmation; you confirm them in the viewer's Review tab |
+| `/authorship:review` | List machine suggestions waiting for your confirmation; you decide them with `authorship review` (or the viewer's Review tab) |
 | `/authorship:disclosure [--claim N]` | Draft `authorship-exports/<date>-disclosure.md` with an element table (human / AI / mixed) and validated citations |
 | `/authorship:seal` | Anchor the current head to an RFC 3161 timestamp authority (and OpenTimestamps when installed) |
 

@@ -6,13 +6,14 @@
     authorship log [-n N] [--all]   recent entries
     authorship status               one line: chain, unsealed, to review
     authorship verify [--anchors]   check the chain (and the external anchors)
+    authorship review [--list]      confirm, reject or edit machine suggestions, one by one
     authorship seal                 anchor the current head now
     authorship open                 open the viewer in the browser
     authorship install [--bin-dir DIR]   put `authorship` on your PATH (~/.local/bin)
 
 The project is found like git finds a repository: the nearest directory, from
 the current one upward, that holds .authorship/. Use --project DIR to override.
-Commands that write in your name (note, seal, open) refuse to run from Claude Code.
+Commands that act in your name (note, review, seal, open) refuse to run from Claude Code.
 """
 import os
 import stat
@@ -21,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ledger  # noqa: E402
 
-HUMAN_ONLY = ("note", "seal", "open")
+HUMAN_ONLY = ("note", "seal", "open", "review")
 ACTORS = {"human": "you", "ai": "claude", "system": "system"}
 
 
@@ -146,6 +147,114 @@ def cmd_open(store, args):
     return viewer.open_existing(store)
 
 
+MILESTONE_WORDS = {
+    "conception_candidate": "a conception moment: you introduced a new technical element",
+    "ai_origin_element": "an AI-origin element: the idea came from Claude",
+    "maturity_jump": "a maturity jump: the idea became more definite",
+    "discard_with_reason": "a discarded approach: this shows the approach cannot work",
+}
+EDGE_WORDS = {"modifies": "modifies", "refines": "builds on", "rejects": "rejects", "derived_from": "accepts",
+              "supersedes": "replaces", "discards": "discards", "supports": "supports", "objects_to": "objects to",
+              "implements": "implements", "responds_to": "responds to"}
+def _valid_label(label):
+    import re
+    import index
+
+    if re.match(r"^milestone:[a-z_]+$", label) or re.match(r"^maturity:[a-z_]+$", label):
+        return True
+    return index.parse_edge_label(label) is not None
+
+
+def _node_text(conn, node_id):
+    r = conn.execute("SELECT label FROM nodes WHERE node_id=?", (str(node_id),)).fetchone()
+    return " ".join((r["label"] if r else "").split())[:160]
+
+
+def explain(conn, item):
+    """Plain-words description of one review item."""
+    label = item["label"]
+    if label.startswith("milestone:"):
+        typ = label.split(":", 1)[1]
+        return "#%s is %s" % (item["target_seq"], MILESTONE_WORDS.get(typ, typ.replace("_", " ")))
+    import index
+
+    src, typ, dst = index.parse_edge_label(label)
+    return "#%s %s #%s" % (src, EDGE_WORDS.get(typ, typ), dst)
+
+
+def _edge_score(conn, item):
+    import json
+
+    if item["score"] is not None or not item.get("annotation_id"):
+        return item["score"]
+    r = conn.execute("SELECT edges_json FROM annotations WHERE id=?", (item["annotation_id"],)).fetchone()
+    for ed in json.loads((r["edges_json"] if r else None) or "[]"):
+        if "edge:%s:%s:%s" % (ed.get("src"), ed.get("type"), ed.get("dst")) == item["label"]:
+            return ed.get("p")
+    return None
+
+
+def cmd_review(store, args, stdin=None, stdout=None):
+    import index
+
+    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    conn = index.update(store)
+    queue = index.review_queue(conn)
+    # unfavorable facts first, like every other report
+    queue.sort(key=lambda i: (i["label"] != "milestone:ai_origin_element", i["target_seq"], i["label"]))
+    if not queue:
+        stdout.write("Nothing to review.\n")
+        return 0
+    if "--list" in args:
+        for item in queue:
+            sc = _edge_score(conn, item)
+            stdout.write("#%-5s %-44s %s\n" % (item["target_seq"], explain(conn, item), "" if sc is None else "%.2f" % sc))
+        return 0
+    if stdin is sys.stdin and not sys.stdin.isatty():
+        sys.stderr.write("authorship review asks you one question per item; run it in a terminal (or use --list)\n")
+        return 3
+    stdout.write("%d suggestion(s). For each: [a]ccept, [r]eject, [e]dit, [s]kip, [q]uit.\n" % len(queue))
+    done = 0
+    for n, item in enumerate(queue, 1):
+        target = ledger.find_entry(store, int(item["target_seq"]))
+        if not target:
+            continue
+        sc = _edge_score(conn, item)
+        stdout.write("\n[%d/%d] %s%s\n" % (n, len(queue), explain(conn, item), "" if sc is None else "  (score %.2f)" % sc))
+        stdout.write("   #%s: %s\n" % (item["target_seq"], _node_text(conn, item["target_seq"])))
+        parsed = index.parse_edge_label(item["label"])
+        if parsed:
+            stdout.write("   #%s: %s\n" % (parsed[2], _node_text(conn, parsed[2])))
+        while True:
+            stdout.write("> ")
+            stdout.flush()
+            answer = stdin.readline()
+            if not answer:
+                answer = "q"
+            answer = answer.strip().lower()[:1]
+            if answer in ("a", "r", "e", "s", "q"):
+                break
+            stdout.write("   a, r, e, s or q\n")
+        if answer == "q":
+            break
+        if answer == "s":
+            continue
+        edited = None
+        if answer == "e":
+            stdout.write("   new label (milestone:<type>, edge:<src>:<type>:<dst> or maturity:<level>): ")
+            stdout.flush()
+            edited = stdin.readline().strip()
+            if not _valid_label(edited):
+                stdout.write("   not a valid label; skipped\n")
+                continue
+        decision = {"a": "accept", "r": "reject", "e": "edit"}[answer]
+        e = ledger.write_confirm(store, target["seq"], target["hash"], item.get("annotation_id"), decision, item["label"], edited)
+        stdout.write("   recorded as #%d (%s)\n" % (e["seq"], decision))
+        done += 1
+    stdout.write("\n%d decision(s) recorded.\n" % done)
+    return 0
+
+
 def cmd_init(args):
     import init_project
 
@@ -182,7 +291,7 @@ def cmd_install(args):
 
 
 COMMANDS = {"log": cmd_log, "status": cmd_status, "verify": cmd_verify, "note": cmd_note, "seal": cmd_seal,
-            "open": cmd_open}
+            "open": cmd_open, "review": cmd_review}
 
 
 def main(argv):
