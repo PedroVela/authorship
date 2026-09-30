@@ -15,18 +15,22 @@ Every prompt, tool call and response goes into a hash-chained ledger in your pro
 
 ## Install
 
-From a local checkout, for one session:
-
-```bash
-claude --plugin-dir /path/to/authorship
-```
-
-Or through the bundled marketplace (the repository root holds `.claude-plugin/marketplace.json`):
+From GitHub, once, with `<owner>/authorship` being the repository that holds this plugin (if it is private, your git credentials must reach it):
 
 ```text
-/plugin marketplace add /path/to/repo
+/plugin marketplace add <owner>/authorship
 /plugin install authorship@authorship-dev
 ```
+
+Updates: `/plugin marketplace update authorship-dev`. To try a local checkout for one session instead: `claude --plugin-dir /path/to/authorship`.
+
+Then put your command on the PATH, in your own terminal:
+
+```bash
+python3 ~/.claude/plugins/cache/authorship-dev/authorship/*/scripts/cli.py install
+```
+
+In a git repository that is not recording yet, Claude mentions `/authorship:init` once (set `AUTHORSHIP_HINT=0` to turn that off).
 
 ## Set up a project
 
@@ -138,6 +142,7 @@ Annotations are opinions: they live in `annotations.jsonl`, never in the ledger.
 | `AUTHORSHIP_VIEWER_OPEN` | `1` | `0`: do not open the browser |
 | `AUTHORSHIP_NO_DAEMONS` | unset | `1`: do not start the annotator and viewer |
 | `AUTHORSHIP_AUTHOR` | `$USER` | Author name on notes |
+| `AUTHORSHIP_HINT` | `1` | `0`: never suggest `/authorship:init` in uninitialized repositories |
 
 ## Files
 

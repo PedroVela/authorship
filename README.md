@@ -6,7 +6,8 @@ A Claude Code plugin that keeps a tamper-evident, timestamped record of how a hu
 - Build spec: [AUTHORSHIP_PLUGIN_SPEC.md](AUTHORSHIP_PLUGIN_SPEC.md); where the build differs, see [authorship/docs/DEVIATIONS.md](authorship/docs/DEVIATIONS.md)
 
 ```bash
-claude --plugin-dir ./authorship        # try it in a session
+claude --plugin-dir ./authorship        # try a local checkout
+# or, installed from GitHub:  /plugin marketplace add <owner>/authorship  then  /plugin install authorship@authorship-dev
 .venv/bin/python -m pytest -q authorship/tests
 ```
 

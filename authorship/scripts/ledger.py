@@ -698,11 +698,42 @@ def ensure_daemons(store):
         spawn_detached([sys.executable, os.path.join(SCRIPTS_DIR, "anchor.py"), "upgrade", "--project", store.project])
 
 
+INIT_HINT = (
+    "The authorship plugin is installed but not recording in this project. If the user is developing something "
+    "they may want to patent, mention once, in one short line, that `/authorship:init` starts a tamper-evident "
+    "record of who conceived what. Do not run it yourself and do not mention it again.\n"
+)
+
+
+def _hint_state_path():
+    base = os.environ.get("CLAUDE_PLUGIN_DATA") or os.path.join(os.path.expanduser("~"), ".cache", "authorship")
+    return os.path.join(base, "init-hints.json")
+
+
+def maybe_hint_init(project):
+    """In a git repository without .authorship/, tell Claude once per project that init exists."""
+    if os.environ.get("AUTHORSHIP_HINT", "1") == "0" or _find_git_dir(project) is None:
+        return
+    path = _hint_state_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        seen = {}
+    if project in seen:
+        return
+    seen[project] = now_iso()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _write_json_atomic(path, seen)
+    sys.stdout.write(INIT_HINT)
+
+
 def cmd_session_start(raw):
     payload = json.loads(raw) if raw.strip() else {}
     payload.setdefault("hook_event_name", "SessionStart")
     store = record_hook(payload)
     if store is None:
+        maybe_hint_init(project_dir(payload))
         return
     reconcile(store, payload.get("session_id"))
     with open(os.path.join(SCRIPTS_DIR, "protocol.md"), "r", encoding="utf-8") as f:

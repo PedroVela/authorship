@@ -263,3 +263,20 @@ def test_verify_blob_cache_still_catches_tampering(qr):
     open(p, "wb").write(data[:-1] + b"X")
     res = ledger.verify(qr, blob_cache=cache)
     assert not res["ok"] and res["broken_at"] == 5
+
+
+def test_init_hint_once_per_git_project(project, tmp_path):
+    env = harness.hook_env(project, CLAUDE_PLUGIN_DATA=str(tmp_path / "data"))
+    start = {"hook_event_name": "SessionStart", "session_id": "h", "cwd": project, "source": "startup"}
+    assert run_hook(project, start, "session-start", env=env).stdout == ""  # not a git repo: silent
+    os.makedirs(os.path.join(project, ".git"))
+    open(os.path.join(project, ".git", "HEAD"), "w").write("ref: refs/heads/main\n")
+    first = run_hook(project, start, "session-start", env=env)
+    assert first.returncode == 0 and "/authorship:init" in first.stdout and "Do not run it yourself" in first.stdout
+    assert run_hook(project, start, "session-start", env=env).stdout == ""  # only once
+    assert not os.path.exists(os.path.join(project, ".authorship"))
+    other = str(tmp_path / "other")
+    os.makedirs(os.path.join(other, ".git"))
+    open(os.path.join(other, ".git", "HEAD"), "w").write("ref: refs/heads/main\n")
+    off = harness.hook_env(other, CLAUDE_PLUGIN_DATA=str(tmp_path / "data"), AUTHORSHIP_HINT="0")
+    assert run_hook(other, dict(start, cwd=other), "session-start", env=off).stdout == ""
