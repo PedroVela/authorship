@@ -9,6 +9,8 @@ When you design something with Claude, the moment you have the idea happens in a
 - **Your ideas and Claude's ideas stay apart, on their own.** A classifier reads each entry in the background and works out what it is. That covers your problems, ideas, decisions and claims, the options Claude offered, and where you changed or rejected them. It also tracks when the work moved to a new stage. You never have to tag anything.
 - **It ends in a draft for your attorney.** An invention disclosure where every element is quoted and cited to the exact ledger entry, AI-originated parts stated plainly.
 
+To see what this looks like in practice, jump to [How a conversation becomes evidence](#how-a-conversation-becomes-evidence): diagrams and a worked example, message by message.
+
 > Not legal advice, and no substitute for filing: patent priority comes from the filing date. Keep any repository that holds a ledger private. See [LEGAL-NOTES](authorship/docs/LEGAL-NOTES.md).
 
 ## Start in three steps
@@ -104,6 +106,173 @@ The record leans against you, never for you:
 - Labels are opinions: they never enter the ledger, and you can reject any of them.
 
 Details: [docs/CLASSIFICATION.md](authorship/docs/CLASSIFICATION.md).
+
+## How a conversation becomes evidence
+
+### What happens to each message
+
+Every message, edit and test run passes through the same path. You do nothing: the hooks write the record, and the annotator reads it in the background a few seconds later.
+
+```mermaid
+flowchart TD
+  you(["You type a prompt"]) --> hooks
+  claude(["Claude replies, edits, runs tests"]) --> hooks
+  hooks["Hooks record every event, secrets redacted"] --> ledger
+  guard{{"Guard: Claude cannot edit the ledger or write as you"}} -.-> ledger
+  ledger[("LEDGER: evidence<br/>append-only, hash-chained")] -- "seconds later, in the background" --> annot
+  annot["Annotator: classifier (Claude or Jev) + rules"] --> ann[("ANNOTATIONS: opinions<br/>tags, stages, milestones, links")]
+  ann --> views["What you see<br/>viewer · authorship log · disclosure draft · MCP tools"]
+  ledger --> views
+  views --> review(["You answer what the classifier was unsure of"])
+  review -- "a Confirm entry, in your name" --> ledger
+  ledger -. "authorship seal" .-> ts["External timestamp"]
+  classDef store fill:#f3f2ee,stroke:#52514e,color:#0b0b0b
+  classDef person fill:#2a78d6,stroke:#2a78d6,color:#fff
+  classDef ai fill:#eb6834,stroke:#eb6834,color:#fff
+  class ledger,ann store
+  class you,review person
+  class claude ai
+```
+
+Two stores, kept apart on purpose:
+
+- **The ledger is evidence.** It holds what was said and done, and your own answers. Each entry carries the hash of the one before, so changing any entry breaks the chain from that point.
+- **Annotations are opinions.** They hold what the classifier and the rules think each entry is. They can be recomputed or rejected; they never touch the ledger.
+
+### A worked example: the ping-pong of ideas
+
+Here is a real session from the test suite, with no tags typed. The goal is to speed up the reconciliation of QR payments.
+
+```mermaid
+sequenceDiagram
+  actor H as You
+  participant C as Claude
+  participant L as Ledger
+  participant K as Classifier
+  H->>C: "Reconciliation of QR payments takes 40 s<br/>because the bank is queried one by one"
+  Note over L: entry 2 · your prompt
+  L-->>K: classify entry 2
+  Note over K: problem · stage "Exploration"
+  C->>H: "Three ways: 1. batch per lot,<br/>2. bank webhook, 3. TTL cache"
+  Note over L: entry 3 · Claude's reply<br/>options 3.1, 3.2, 3.3 (Claude's)
+  H->>C: "Instead of TTL, invalidate by<br/>the statement sequence number"
+  Note over L: entry 4 · your prompt
+  L-->>K: classify entry 4
+  Note over K: idea · new element · changes option 3.3<br/>conception
+  C->>C: writes src/recon.py · tests FAIL · edits it · tests PASS
+  Note over L: entries 5 to 8 · each tool call, with file hashes
+  Note over K: rule: tests went red to green<br/>on files edited since idea 4<br/>evidence that idea 4 works
+  H-->>L: authorship note "Bloom filter on transaction IDs:<br/>false positives lose payments"
+  Note over K: entry 10 · discarded approach
+  H->>C: "Long-poll the sequence endpoint every 2 s, not the webhook,<br/>because the bank does not sign webhooks"
+  Note over K: entry 11 · decision · rejects option 3.2<br/>builds on idea 4 · stage "Prototype"
+  H->>C: "Method that detects the absence of new transactions<br/>by comparing a monotonic statement counter"
+  Note over K: entry 13 · claim · builds on 4 and 11
+```
+
+The same session, entry by entry: what was written, what the ledger records, and what each layer adds.
+
+| # | Who | Message | Ledger records | Classifier adds | Rules add |
+|---|---|---|---|---|---|
+| 2 | You | "Reconciliation of QR payments takes 40 s because the bank is queried one by one" | your prompt, verbatim | **problem**; opens stage **Exploration** | |
+| 3 | Claude | "Three ways to cut the reconciliation time: 1. batch per lot… 2. bank webhook… 3. TTL cache…" | Claude's reply | offers alternatives | three AI options: **#3.1**, **#3.2**, **#3.3** |
+| 4 | You | "Instead of TTL, invalidate by the statement sequence number" | your prompt | **idea**, a new element (0.90); **changes Claude's #3.3**; builds on #2; **conception** | |
+| 5 | Claude | writes `src/recon.py` | tool call, file hash after | | implements #4 |
+| 6 | Claude | runs `pytest`: 1 failed | failed tool call | | tests fail against #4 |
+| 7 | Claude | edits `src/recon.py` | tool call, file hash after | | implements #4 |
+| 8 | Claude | runs `pytest`: 3 passed | tool call | | **evidence that idea #4 works** (red to green) |
+| 9 | Claude | "Done: the cache is now invalidated when the sequence number changes" | Claude's reply | implements the instruction | |
+| 10 | You (terminal) | `authorship note "Bloom filter on transaction IDs: false positives lose payments"` | your note | **discarded approach** | |
+| 11 | You | "Long-poll the sequence endpoint every 2 s, not the webhook, because the bank does not sign webhooks" | your prompt | **decision**; **rejects #3.2**; builds on #4; opens stage **Prototype** | |
+| 12 | Claude | writes `src/poller.py` | tool call | | implements #11 |
+| 13 | You | "Method that detects the absence of new transactions by comparing a monotonic statement counter, without downloading the detail" | your prompt | **claim**; builds on #4 and #11 | |
+
+Where the classifier comes in:
+
+- **When:** after each entry reaches the ledger, in the background, usually within seconds.
+- **On what:** your prompts and notes, and Claude's replies. Tool calls and test runs are left to the deterministic rules.
+- **Labels in your favor** count automatically from 0.80 confidence; between 0.50 and 0.80 they wait for you in `authorship review`.
+- **Labels against you** count from 0.50. A label against you means an element that came from Claude.
+- **Your tags win.** If you type `#idea` or `#claim` yourself, that wins.
+
+### How an idea matures
+
+The labels and links build up a lineage: which element came from whom, and what each later one changed. This is the lineage of the claim at #13:
+
+```mermaid
+flowchart LR
+  subgraph explore["Stage: Exploration"]
+    p2(["#2 You · problem<br/>reconciliation takes 40 s"])
+    o33["#3.3 Claude · option<br/>TTL cache"]
+    o32["#3.2 Claude · option<br/>bank webhook"]
+    i4(["#4 You · idea<br/>invalidate by sequence number"])
+    t8["#8 Claude · tests<br/>pass after failing"]
+    x10(["#10 You · discarded<br/>Bloom filter"])
+  end
+  subgraph proto["Stage: Prototype"]
+    d11(["#11 You · decision<br/>long-poll, not the webhook"])
+    c13(["#13 You · CLAIM<br/>detect new transactions by<br/>comparing a monotonic counter"])
+  end
+  o33 -- "changed by" --> i4
+  p2 -- "built on by" --> i4
+  t8 -. "proves" .-> i4
+  i4 -- "built on by" --> d11
+  o32 -. "rejected by" .-> d11
+  i4 -- "built on by" --> c13
+  d11 -- "built on by" --> c13
+  classDef you fill:#2a78d6,stroke:#2a78d6,color:#fff
+  classDef ai fill:#eb6834,stroke:#eb6834,color:#fff
+  classDef dead fill:#fff,stroke:#898781,stroke-dasharray:4 3,color:#52514e
+  class p2,i4,d11,c13 you
+  class o33,t8 ai
+  class o32,x10 dead
+```
+
+Blue rounded shapes are your entries; orange squares are Claude's; dashed shapes were discarded or rejected. The colors and shapes match the viewer. In maturity terms, the work moved through four steps:
+
+1. A **goal** (#2: "too slow").
+2. An **approach** borrowed from Claude (#3.3: cache it).
+3. Your **mechanism** (#4: invalidate by sequence number), proven by tests (#8).
+4. An **operative** decision and claim (#11, #13).
+
+### What you see at the end
+
+The annotator keeps watching while you work. The viewer refreshes every 4 seconds, and the status line updates. At any point, and at the end, you get the following.
+
+**`authorship status`** shows the record is intact, how much of it is sealed, and how many labels wait for you:
+
+```text
+authorship ✓ 14 | 14 unsealed | 0 to review
+classifier: on (claude-cli)
+```
+
+**The viewer's Overview** shows claim #13 with its four elements:
+
+| Element | Origin | Evidence |
+|---|---|---|
+| #2: the problem | from you | |
+| #11: the decision | from you | |
+| #4: the idea | **you, changing Claude's #3.3** | tests prove it at #8 |
+| #3.3: the TTL cache | **from Claude** | changed by you at #4 |
+
+Under "What came from Claude", it lists #3.3 plainly.
+
+**The disclosure draft** (`/authorship:disclosure`) turns the same lineage into an element table for your attorney. Every row is quoted from the ledger and cited by entry and hash:
+
+```text
+| Element                                                          | Origin | Citations                          |
+|------------------------------------------------------------------|--------|------------------------------------|
+| method that detects the absence of new transactions by ...       | human  | #13 (e9839eb6d842)                 |
+| instead of TTL, invalidate by the statement sequence number      | mixed  | #4 (0f08ea152e7d), #3.3 (b49ea0e9333b) |
+| long-poll the sequence endpoint every 2 s, not the webhook, ...  | human  | #11 (eb3409ae1600)                 |
+| reconciliation of QR payments takes 40 s because ...             | human  | #2 (2dae2d765d6d)                  |
+| TTL cache: cache the bank's statement for 30 s and reconcile ... | AI     | #3.3 (b49ea0e9333b)                |
+
+## 5. Reduction-to-practice evidence
+- #4 (0f08ea152e7d): tests pass at #8 (c950e60985b1) after failing, on files edited since the idea.
+```
+
+Hashes differ in each run; `tests/validate_citations.py` checks that every one resolves.
 
 ## If something goes wrong
 
