@@ -81,6 +81,7 @@ def build_graph(store):
             "response_blob": (e.get("response") or {}).get("blob") if isinstance(e.get("response"), dict) else None,
             "error": e.get("error"), "reason": e.get("reason"), "author": e.get("author"),
             "decision": e.get("decision"), "label": e.get("label"), "target_seq": e.get("target_seq"),
+            "edited_label": e.get("edited_label"),
         })
     for r in conn.execute("SELECT n.*, e.ts, e.event, e.tags_json, e.auto_tags_json, e.hash, e.file, e.tool, e.outcome, e.session"
                           " FROM nodes n JOIN entries e ON e.seq = n.seq ORDER BY n.seq, n.node_id"):
@@ -96,15 +97,68 @@ def build_graph(store):
     stages = [{"name": r[0], "first_seq": r[1], "last_seq": r[2]} for r in conn.execute(
         "SELECT stage, MIN(seq), MAX(seq) FROM entries WHERE stage IS NOT NULL GROUP BY stage ORDER BY MIN(seq)")]
     claims = [r["node_id"] for r in conn.execute("SELECT node_id FROM nodes WHERE ibis_type='claim' ORDER BY seq")]
-    review = index.review_queue(conn)
+    review = [explain_item(conn, i) for i in index.review_queue(conn)]
+    review_all = [explain_item(conn, i) for i in index.review_queue(conn, include_auto=True)]
+    invent = inventions(q, conn, claims)
     conn.close()
     return {
         "etag": _etag(store),
         "project": os.path.basename(store.project),
         "chain": {k: chain[k] for k in ("ok", "entries", "head", "broken_at", "reason", "sealed_upto", "unsealed")},
         "stages": stages, "entries": entries, "nodes": nodes, "edges": edges, "claims": claims, "review": review,
+        "review_all": review_all, "inventions": invent,
         "limits": {"stages_only_above": STAGES_ONLY_ABOVE},
     }
+
+
+def explain_item(conn, item):
+    """A review item with the question in plain words and its score."""
+    import cli
+
+    out = dict(item)
+    out["question"] = cli.explain(conn, item)
+    out["score"] = cli._edge_score(conn, item)
+    return out
+
+
+def lineage_mode(conn):
+    """The same choice the disclosure makes: confirmed + automatic links when any exist, else every rule link."""
+    if conn.execute("SELECT COUNT(*) FROM edges WHERE source IN ('confirmed', 'auto')").fetchone()[0]:
+        has_conf = conn.execute("SELECT COUNT(*) FROM edges WHERE source='confirmed'").fetchone()[0]
+        return {"curated": True}, ("confirmed and automatic" if has_conf else "automatic")
+    return {}, "rules only"
+
+
+def inventions(q, conn, claims):
+    """Per claim: the elements it rests on, each with its origin (human, ai, mixed) and evidence."""
+    mode, mode_text = lineage_mode(conn)
+    rtp = {}
+    for r in conn.execute("SELECT target_seq, evidence_seq FROM milestones WHERE type='reduction_to_practice'"):
+        rtp.setdefault(str(r["target_seq"]), []).append(r["evidence_seq"])
+    out = []
+    for c in claims:
+        lin = q.lineage(c, depth=20, **mode)
+        edges = lin["edges"]
+        elements = []
+        for n in lin["items"]:
+            node = conn.execute("SELECT ibis_type, author FROM nodes WHERE node_id=?", (n["node"],)).fetchone()
+            if node is None or node["ibis_type"] in ("response", "action", "argument") or n["node"] == str(c):
+                continue
+            origin = "ai" if n["author"] == "ai" else "human"
+            modified = [e["dst"] for e in edges if e["src"] == n["node"] and e["type"] in ("modifies", "refines")
+                        and (conn.execute("SELECT author FROM nodes WHERE node_id=?", (e["dst"],)).fetchone() or {"author": ""})["author"] == "ai"]
+            if origin == "human" and modified:
+                origin = "mixed"
+            changed_by = [e["src"] for e in edges if e["dst"] == n["node"] and e["type"] in ("modifies", "refines")]
+            elements.append({"node": n["node"], "seq": n["seq"], "hash": n["hash"], "text": n["text"], "origin": origin,
+                             "ibis": node["ibis_type"], "builds_on_ai": modified, "changed_by": changed_by,
+                             "evidence": rtp.get(n["node"], [])})
+        counts = {k: sum(1 for e in elements if e["origin"] == k) for k in ("human", "mixed", "ai")}
+        row = conn.execute("SELECT label FROM nodes WHERE node_id=?", (str(c),)).fetchone()
+        out.append({"id": str(c), "seq": rules.node_seq(c), "hash": q._hash(rules.node_seq(c)),
+                    "text": rules.entry_text(ledger.find_entry(q.store, rules.node_seq(c)) or {}, q.store) or (row["label"] if row else ""),
+                    "elements": elements, "counts": counts, "links": mode_text})
+    return out
 
 
 def build_report(store):

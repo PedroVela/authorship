@@ -46,51 +46,28 @@ Where the spec (v0.1) and reality differed, the plugin follows reality. Each ite
 25. **Anchors.** An `Anchor` entry with `status: "pending"` is written before any proof is requested; a second one with `status: "complete"` when every method has its proof (RFC 3161 immediately, OpenTimestamps after a later `upgrade`). `sealed_upto` counts complete anchors and anchors whose RFC 3161 proof arrived. For the default authority, freetsa.org's CA certificates are stored under `anchors/tsa/` so responses can be verified offline later.
 26. **Structural milestones need no confirmation.** Tag-derived Tier-0 milestones (declared by the human) and session boundaries count as confirmed; reduction-to-practice evidence and all Tier-1 labels wait for the human.
 
-## Viewer (phase 4)
+## Viewer
 
-- **Reasoning layout: ELK only below 600 nodes.** Measured in headless Chromium on an Apple-silicon laptop,
-  ELK layered with partitions took 0.75 s at 300 nodes, 3.7 s at 600 and 14.6 s at 1,000 with the default options.
-  It was still 2.5 s at 1,000 after turning off crossing minimization and using simple node placement.
-  Above 600 nodes the view uses deterministic swimlane positions and cytoscape's `preset` layout.
-  Measured at 5,000 nodes: 0.6 s from data to first render, and 59-60 fps on a scripted 1 s `cy.panBy` pan at a
-  readable zoom (about 45 fps fully zoomed out).
-  Above 1,500 nodes cytoscape's performance options are on: `hideEdgesOnViewport`, `textureOnViewport`,
-  `pixelRatio: 1`, haystack edges, and no labels below zoom 0.9.
-- **How ELK is used.** Time must run along x, but ELK layered puts partitions along its layering direction.
-  So ELK runs with `elk.direction: DOWN`, one partition per lane (`elk.partitioning.activate`, `elk.partitioning.partition`), and
-  supplies each lane's order and the node's layer inside the lane (y). The x of every node is then replaced by its
-  seq column, so x is strictly monotonic in time. ELK runs through the vendored cytoscape-elk on a headless
-  cytoscape instance. The visible graph is then built with those positions and the compound option groups.
-- **Option groups via expand-collapse.** An AI response that offers numbered options is a compound node, with the options
-  `N.1..N.k` as its children. The toolbar ("Collapse/Expand options") and a double-click fold them into the
-  response node through cytoscape-expand-collapse.
-- **Replay is a tab and also a bar.** The replay slider appears in every graph view: Reasoning, Genealogy and Branches.
-  The Replay tab adds play controls and a "Replay in" selector.
-- **Stages-only fallback above 5,000 nodes.** Reasoning, Genealogy, Branches and Replay are disabled and a notice is shown.
-  Review stays available, because confirmations must remain possible on large ledgers.
-- **Genealogy depth.** The browser walks the lineage to depth 10, the same as `/api/report.md` and the MCP `lineage` tool,
-  so the viewer and the report agree.
-- **Branches semantics.** An approach is any `position` node: a human idea, hypothesis or discard, or an AI option or
-  "AI proposal:" line. Tool edits and test runs are commits on the branch they implement or test.
-  A merge is the first adoption (`implements`, `supports`, `derived_from` or `refines`) by a non-work, non-approach node.
-  A human approach that `modifies` an AI option continues in that option's column.
-  A dead end is a `discarded` or `rejected` status. Its reason is the rejecting entry; otherwise its last failing test;
-  otherwise the discard note itself. Suggested (annotation-only) edges are ignored.
-- **viewer.py changes (bugs found while building the frontend).**
-  1. The ETag only hashed the head and the size of annotations.jsonl. An in-place edit of an older ledger line keeps
-     the head, so a polling page kept getting 304 and never showed "broken at #N". The ETag now also includes the size
-     and mtime of `ledger.jsonl` and `annotations.jsonl`.
-  2. Added the read-only endpoint `GET /api/entry/<seq>`, which returns `{seq, hash, text}`. `/api/graph` carries only a
-     600-char preview with whitespace collapsed, and `/api/blob/` covers texts over 8 KB only. Before this endpoint, the full
-     text of an inline entry of 600 B to 8 KB, and the line breaks of any entry, could not be shown. It has the same Host
-     check as every other GET.
-- **Origin on the confirm POST.** Every response sends `Referrer-Policy: no-referrer`. Under the Fetch spec, a
-  same-origin POST from such a page carries `Origin: null`, which the server rightly rejects. The page's fetch sets
-  `referrerPolicy: 'same-origin'` so the real Origin is sent. The server check is unchanged.
-- **Tests and CSP.** Playwright's `wait_for_function` evaluates strings with `eval`, which the page's CSP blocks by design.
-  The tests poll with `page.evaluate` from Python instead. Playwright for Python 1.60 (the last release for Python 3.9)
-  pins Chromium build 1223, which is not cached. The tests fall back to the cached `chromium_headless_shell-*` builds,
-  then to `channel="chrome"`.
+The first build had the spec's six views (Stages, Reasoning, Genealogy, Replay, Branches, Review). In use they overlapped and spoke in jargon ("IBIS", "Genealogy"), and none answered the first question: what did I invent, and who contributed what. The viewer was redesigned around four questions (see [VIEWER.md](VIEWER.md)):
+
+- **Overview** (new, the default) does what Genealogy's summary did, and more. Per claim it shows the elements, their origin (you, Claude, or you changing Claude), the evidence, and a bar of the share. It uses the same curated lineage as the disclosure.
+- **Timeline** replaces Stages and Branches.
+  - It lists entries by stage, one plain sentence each: options with their fate, discards struck through, and adoption and rejection inline.
+  - "Key moments" folds Claude's routine work.
+  - Rows open on full text, diff and links.
+- **Map** replaces Reasoning, Genealogy and Replay.
+  - It uses the same lanes in plain words.
+  - It focuses on a claim's lineage by default.
+  - It has a "record up to" slider and a Play button in place of the Replay tab.
+- **Review** asks plain questions ("Is #11 a maturity jump: the idea became more definite?"). It can also correct labels already counted automatically.
+
+Other changes:
+- **No elkjs.** The Map places nodes itself: a column per entry in time order, a row per lane. That reads better than ELK's layering and stays fast at 5,000 nodes (0.3 s, 60 fps in the scale test). elkjs, cytoscape-elk and cytoscape-expand-collapse are no longer vendored.
+- **Above 5,000 nodes** only the Map is turned off; Overview, Timeline and Review keep working.
+- **Colors** follow a validated categorical palette, checked with the dataviz validator in light and dark: you slot 1 (blue), Claude slot 2 (orange), you changing Claude slot 3 (aqua). Shape and a word always go with color.
+- **`/api/graph`** also carries `inventions` (per-claim elements and origin), `review_all`, and `edited_label` on confirmations. **`GET /api/entry/<seq>`** returns one entry's full text.
+- **Origin header.** The page sends `Referrer-Policy: no-referrer`, so the confirm request sets `referrerPolicy: 'same-origin'` to carry a real `Origin`. The server check is unchanged.
+- **Tests.** Playwright 1.60 (the last release for Python 3.9) runs on the cached headless Chromium. `wait_for_function` is blocked by the page's CSP, so tests poll with `page.evaluate`.
 
 ## Automatic classification (after the first build)
 

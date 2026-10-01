@@ -118,7 +118,13 @@ The `inventorship-reviewer` subagent writes a contribution analysis for one clai
 
 ### Viewer
 
-The viewer starts in the background at session start, on `127.0.0.1` only, and opens your browser once. Tabs: Stages, Reasoning (IBIS swimlanes), Genealogy (a claim's lineage, with the count of human- and AI-originated ancestors), Replay (a slider over the ledger), Branches, and Review. Human nodes are circles and AI nodes rounded squares. The Review tab is the only place that writes, and only with the session secret.
+The viewer starts in the background at session start, on `127.0.0.1` only, and opens your browser once (`authorship open` brings it back). Four tabs, in plain words:
+- **Overview**: what you invented. Each claim, the elements it rests on, and who contributed each: you, Claude, or you changing Claude's proposal.
+- **Timeline**: what happened, in order, by stage.
+- **Map**: how the ideas connect, with a slider to replay the record.
+- **Review**: labels to check.
+
+You are a blue circle and Claude an orange square. Review answers are the only writes, and only with the session secret. Full guide with screenshots: [docs/VIEWER.md](docs/VIEWER.md).
 
 ## Automatic classification
 
@@ -184,4 +190,4 @@ python3 -m venv .venv && .venv/bin/pip install pytest playwright
 claude plugin validate ./authorship
 ```
 
-More: [docs/THREATS.md](docs/THREATS.md), [docs/DEVIATIONS.md](docs/DEVIATIONS.md), and troubleshooting in the [project README](../README.md#if-something-goes-wrong).
+More: [docs/VIEWER.md](docs/VIEWER.md), [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md), [docs/THREATS.md](docs/THREATS.md), [docs/DEVIATIONS.md](docs/DEVIATIONS.md), and troubleshooting in the [project README](../README.md#if-something-goes-wrong).

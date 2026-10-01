@@ -70,7 +70,17 @@ Add a note in your own name when something happened off the chat, for example an
 | Seal | `authorship seal` | Gets an external timestamp for the current state of the ledger, so any later rewrite is detectable. |
 | Draft | `/authorship:disclosure` (in Claude Code) | Writes `authorship-exports/<date>-disclosure.md` for your attorney, with every element cited to the ledger. |
 
-The viewer (`authorship open`) shows the same history as a map: stages, the reasoning behind each decision, and the full lineage of a claim, with your contributions and Claude's marked apart.
+### The viewer
+
+`authorship open` shows the record in your browser, in four tabs:
+- **Overview**: what you invented, and who contributed each element.
+- **Timeline**: what happened, in order.
+- **Map**: how the ideas connect, with a slider to replay how the record grew.
+- **Review**: labels to check.
+
+![Overview: a claim, the elements it rests on, and who contributed each](authorship/docs/images/viewer-overview.png)
+
+Guide: [docs/VIEWER.md](authorship/docs/VIEWER.md).
 
 ### Who classifies, and what it sees
 
@@ -90,7 +100,7 @@ Details: [docs/CLASSIFICATION.md](authorship/docs/CLASSIFICATION.md).
 | What you see | What to do |
 |---|---|
 | `refuses to run from Claude Code` | `note`, `review`, `seal` and `open` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
-| The viewer did not open | `authorship open`. |
+| The viewer did not open | `authorship open`. The page explains itself under "How to read this"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
 | Claude cannot look things up in the ledger | Install [`uv`](https://docs.astral.sh/uv/), then restart Claude Code. |
 | `authorship: no .authorship/ here` | You are outside a recorded project; `cd` into it, or run `/authorship:init`. |
 | `authorship verify` says `BROKEN at #N` | Entry N was changed after it was written. Do not "fix" the ledger; tell your attorney. Git history shows when it changed. |
@@ -105,6 +115,7 @@ To pause recording: `claude plugin disable authorship@authorship-dev` (the ledge
 
 - [Plugin reference](authorship/README.md): all commands, skills, settings and files
 - [Automatic classification](authorship/docs/CLASSIFICATION.md): what is asked, which backend answers, thresholds, how to correct it
+- [The viewer](authorship/docs/VIEWER.md): the four tabs, the symbols, and how answers are recorded
 - [Threat model](authorship/docs/THREATS.md): what the plugin protects against, and what it does not
 - [Build spec](AUTHORSHIP_PLUGIN_SPEC.md) and [deviations from it](authorship/docs/DEVIATIONS.md)
 

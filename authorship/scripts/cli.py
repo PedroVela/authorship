@@ -176,7 +176,12 @@ MILESTONE_WORDS = {
     "conception_candidate": "a conception moment: you introduced a new technical element",
     "ai_origin_element": "an AI-origin element: the idea came from Claude",
     "maturity_jump": "a maturity jump: the idea became more definite",
-    "discard_with_reason": "a discarded approach: this shows the approach cannot work",
+    "discard_with_reason": "a discarded approach, with the reason it fails",
+    "problem_fixed": "the statement of the technical problem being solved",
+    "decision_with_reason": "a decision between alternatives, with its reason",
+    "claim_candidate": "a claim candidate: the invention stated as a whole",
+    "stage_opened": "the start of a new stage of the work",
+    "reduction_to_practice": "evidence that the idea works (tests pass after failing)",
 }
 EDGE_WORDS = {"modifies": "modifies", "refines": "builds on", "rejects": "rejects", "derived_from": "accepts",
               "supersedes": "replaces", "discards": "discards", "supports": "supports", "objects_to": "objects to",

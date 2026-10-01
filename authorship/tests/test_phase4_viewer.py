@@ -188,12 +188,11 @@ def test_confirm_requires_secret_origin_and_json(served):
 
 def test_static_files_and_traversal(served):
     status, headers, body = served.request("GET", "/")
-    assert status == 200 and b"Authorship ledger" in body
+    assert status == 200 and b"Authorship record" in body
     csp = headers["Content-Security-Policy"]
     assert "script-src 'self'" in csp and "unsafe-eval" not in csp
     assert b"<script>" not in body  # no inline scripts (CSP would block them)
-    for path in ("/app.js", "/app.css", "/vendor/cytoscape.min.js", "/vendor/elk.bundled.js",
-                 "/vendor/cytoscape-elk.js", "/vendor/cytoscape-expand-collapse.js"):
+    for path in ("/app.js", "/app.css", "/vendor/cytoscape.min.js"):
         assert served.request("GET", path)[0] == 200, path
     for path in ("/../scripts/ledger.py", "/vendor/../../scripts/ledger.py", "/..%2fscripts/ledger.py",
                  "/%2e%2e/scripts/ledger.py", "/vendor/../../tests/conftest.py", "//etc/passwd", "/nope.html"):
@@ -258,6 +257,7 @@ def _launch(p):
     pytest.skip("no usable Chromium for Playwright: %s" % errors[-1])
 
 
+
 @pytest.fixture(scope="module")
 def browser():
     sync_api = pytest.importorskip("playwright.sync_api")
@@ -291,181 +291,137 @@ def open_page(browser, served, hash_="", with_secret=True, viewport=None):
     if hash_:
         frag.append(hash_)
     page.goto(served.origin + "/" + ("#" + "&".join(frag) if frag else ""))
-    wait_js(page, "() => /chain|broken/.test(document.getElementById('chain-badge').textContent)")
+    wait_js(page, "() => /Record/.test(document.getElementById('chain-badge').textContent)")
     return ctx, page, problems
 
 
 def click_tab(page, view):
     page.click("#tab-" + view)
-    if view in ("reasoning", "genealogy", "replay"):
+    wait_js(page, "() => window.__authorshipPerf.view === '%s'" % view)
+    if view == "map":
         wait_js(page, "() => window.__authorshipPerf.ready && !!window.__authorship.cy()", 30)
 
 
-def test_browser_smoke_golden(browser, served):
-    store = served.store
-    ctx, page, problems = open_page(browser, served, "view=stages")
+def map_ids(page):
+    return set(page.evaluate("() => window.__authorship.cy().nodes().not('.lane, .lanelabel').map(n => n.id())"))
+
+
+def test_browser_overview_answers_who_contributed_what(browser, served):
+    ctx, page, problems = open_page(browser, served)
     # the secret moved to sessionStorage and left the URL
-    assert "k=" not in page.url and "view=stages" in page.url
+    assert "k=" not in page.url
     assert page.evaluate("() => sessionStorage.getItem('authorship.viewer.secret')") == served.secret
-    assert page.inner_text("#chain-badge").startswith("✓ chain verified")
-    assert " %d entries" % len(entries(store)) in page.inner_text("#chain-badge")
+    assert page.inner_text("#chain-badge").startswith("✓ Record intact")
+    wait_js(page, "() => document.querySelector('.claim[data-claim=\"13\"]')")
+    kpis = page.inner_text("#kpis")
+    assert "Intact" in kpis and "Not sealed yet" in kpis and "3 of 4" in kpis and "Waiting for you\n2" in kpis
+    claim = page.inner_text('.claim[data-claim="13"]')
+    assert "method that detects the absence of new transactions" in claim
+    assert "From you 2" in claim.replace("\n", " ") and "From Claude 1" in claim.replace("\n", " ")
+    assert "changes Claude’s #3.3" in claim and "tests prove it at #8" in claim and "changed by you at #4" in claim
+    assert "TTL cache" in page.inner_text("#against")  # what came from Claude, stated plainly
+    assert "Exploration" in page.inner_text("#stages-summary") and "Prototype" in page.inner_text("#stages-summary")
+    # the help dialog explains the four views
+    page.click("#help-btn")
+    assert page.is_visible("#help") and "Timeline" in page.inner_text("#help")
+    page.keyboard.press("Escape")
+    assert problems == []
+    ctx.close()
 
-    # Stages: one column per stage, dead branch for the discard, full text and diff on expand
-    wait_js(page, "() => document.querySelectorAll('.stage-col').length === 2")
-    assert page.eval_on_selector_all(".stage-col h2", "els => els.map(e => e.textContent)") == ["Exploration", "Prototype"]
-    assert "dead" in page.get_attribute('.card[data-seq="10"]', "class")
-    assert "discarded" in page.inner_text('.card[data-seq="10"]')
-    page.click('.card[data-seq="3"] button.more')
-    wait_js(page, "() => (document.querySelector('.card[data-seq=\"3\"] pre.text') || {}).textContent")
-    assert "\n1. Batch per lot" in page.inner_text('.card[data-seq="3"] pre.text')
-    page.click('.card[data-seq="7"] button.more')
-    wait_js(page, "() => document.querySelectorAll('.card[data-seq=\"7\"] pre.diff .add').length > 0")
-    assert page.eval_on_selector_all('.card[data-seq="7"] pre.diff .del', "els => els.length") > 0
-    page.click('.card[data-seq="5"] button.more')  # Write: whole file added
-    wait_js(page, "() => document.querySelectorAll('.card[data-seq=\"5\"] pre.diff .add').length >= 5")
 
-    # keyboard: arrow keys move between tabs
-    page.focus("#tab-stages")
-    page.keyboard.press("ArrowRight")
-    wait_js(page, "() => document.getElementById('tab-reasoning').getAttribute('aria-selected') === 'true'")
-    wait_js(page, "() => window.__authorshipPerf.ready")
+def test_browser_timeline_tells_the_story(browser, served):
+    ctx, page, problems = open_page(browser, served, "view=timeline")
+    wait_js(page, "() => document.querySelectorAll('.tl-stage').length >= 2")
+    heads = page.eval_on_selector_all(".tl-stage-head h2", "els => els.map(e => e.textContent)")
+    assert heads[:2] == ["Exploration", "Prototype"]
+    text = page.inner_text("#timeline")
+    assert "stated the problem" in text and "offered 3 options" in text and "proposed an idea, changing Claude’s #3.3" in text
+    assert "they pass after failing" in text and "Evidence that idea #4 works" in text
+    assert "rejected" in page.inner_text('.tl-item[data-seq="3"]')
+    assert "dead" in page.get_attribute('.tl-item[data-seq="10"]', "class")
+    assert not page.query_selector('.tl-item[data-seq="7"]')  # routine work is folded in Key moments
+    # open #4: full text and its links
+    page.click('.tl-item[data-seq="4"] .tl-row')
+    wait_js(page, "() => document.querySelector('.tl-item[data-seq=\"4\"] .tl-detail pre.text')")
+    det = page.inner_text('.tl-item[data-seq="4"] .tl-detail')
+    assert "changes #3.3" in det and "is shown working by #8" in det
+    # Everything: every step, with the code change
+    page.click('#tl-filter button[data-f="all"]')
+    wait_js(page, "() => document.querySelector('.tl-item[data-seq=\"7\"]')")
+    page.click('.tl-item[data-seq="7"] .tl-row')
+    wait_js(page, "() => document.querySelectorAll('.tl-item[data-seq=\"7\"] pre.diff .add').length > 0")
+    assert page.eval_on_selector_all('.tl-item[data-seq="7"] pre.diff .del', "els => els.length") > 0
+    # search
+    page.fill("#tl-search", "bloom")
+    wait_js(page, "() => document.querySelectorAll('.tl-item').length === 1")
+    assert "tl=all" in page.url and "q=bloom" in page.url
+    assert problems == []
+    ctx.close()
 
-    # Reasoning: ELK below the threshold, shapes paired with author, dashed discards and negative edges
-    layout = page.evaluate("() => window.__authorshipPerf.layout")
-    assert layout["mode"] == "elk" and layout["nodes"] == 15
-    info = page.evaluate("""() => { const cy = window.__authorship.cy(); const n = id => cy.getElementById(id);
-      const lane = id => n(id).data('lane');
-      return { human: n('4').style('shape'), ai: n('3.3').style('shape'), dead: n('10').style('border-style'),
-               rejected: n('3.2').style('border-style'), neg: cy.edges('[type = "rejects"]').style('line-style'),
-               obj: cy.edges('[type = "objects_to"]').style('line-style'), impl: cy.edges('[type = "implements"]').style('line-style'),
-               lanes: [lane('2'), lane('3.3'), lane('6'), lane('11'), lane('13')],
-               parent: n('3.3').parent().id(), xs: ['2', '3.3', '4', '11', '13'].map(id => n(id).position('x')),
-               laneNodes: cy.nodes('.lane').length, count: cy.nodes().not('.lane').length }; }""")
-    assert info["human"] == "ellipse" and info["ai"] == "round-rectangle"
-    assert info["dead"] == "dashed" and info["rejected"] == "dashed"
-    assert info["neg"] == "dashed" and info["obj"] == "dashed" and info["impl"] == "solid"
-    assert info["lanes"] == [0, 1, 2, 3, 3]  # Issues, Positions, Arguments, Decisions
-    assert info["parent"] == "3" and info["laneNodes"] == 4 and info["count"] == 15
-    assert info["xs"] == sorted(info["xs"]) and info["xs"][0] < info["xs"][-1]  # time on the x axis
-    assert page.is_visible("#legend") and "Human" in page.inner_text("#legend") and "AI" in page.inner_text("#legend")
-    # expand-collapse folds a response's options into the response node
-    page.click("#btn-collapse")
-    assert page.evaluate("() => window.__authorship.cy().getElementById('3.1').length") == 0
-    page.click("#btn-expand")
-    assert page.evaluate("() => window.__authorship.cy().getElementById('3.1').length") == 1
-    # selecting a node shows its entry
+
+def test_browser_map_focuses_on_the_claim(browser, served):
+    ctx, page, problems = open_page(browser, served, "view=map")
+    click_tab(page, "map")
+    ids = map_ids(page)
+    assert {"2", "3.3", "4", "11", "13"} <= ids and "8" in ids          # the lineage, and the tests that show it working
+    assert not ids & {"3.1", "5", "7", "9", "12"}                       # nothing the claim does not rest on
+    assert page.evaluate("() => window.__authorship.cy().getElementById('4').hasClass('you')")
+    assert page.evaluate("() => window.__authorship.cy().getElementById('3.3').hasClass('ai')")
     page.evaluate("() => window.__authorship.cy().getElementById('4').emit('tap')")
-    wait_js(page, "() => document.getElementById('detail').textContent.indexOf('#4') >= 0")
-    wait_js(page, "() => document.getElementById('detail').textContent.indexOf('instead of TTL') >= 0")
-    assert "sel=4" in page.url
+    wait_js(page, "() => /#4/.test(document.getElementById('map-detail').textContent)")
+    assert "changes #3.3" in page.inner_text("#map-detail")
+    # the whole record, then the slider back in time
+    page.select_option("#map-focus", "all")
+    wait_js(page, "() => window.__authorship.cy().getElementById('12').length === 1")
+    page.evaluate("""() => { const s = document.getElementById('map-slider'); s.value = '4'; s.dispatchEvent(new Event('input')); }""")
+    wait_js(page, "() => window.__authorship.cy().getElementById('5').length === 0")
+    assert max(int(i.split(".")[0]) for i in map_ids(page)) <= 4
+    assert "upto=4" in page.url and "focus=all" in page.url
+    assert page.inner_text("#map-legend").count("\n") >= 5
+    assert problems == []
+    ctx.close()
 
-    # Genealogy: claim 13, confirmed edges only
-    click_tab(page, "genealogy")
-    page.select_option("#gen-claim", "13")
-    if not page.is_checked("#gen-confirmed"):
-        page.check("#gen-confirmed")
-    wait_js(page, "() => document.getElementById('gen-lineage')")
-    assert page.get_attribute("#gen-lineage", "data-lineage") == "2,3.3,4,11,13"
-    ai_item = page.inner_text('#gen-ai li[data-node="3.3"]')
-    assert "AI-originated, modified by the human at #4" in ai_item
-    assert page.eval_on_selector_all("#gen-ai li", "els => els.length") == 1
-    summary = page.inner_text("#gen-summary")
-    assert "Human-originated ancestors: 3" in summary and "AI-originated ancestors: 1" in summary
-    assert "claim=13" in page.url and "conf=1" in page.url
-    dim = page.evaluate("""() => { const cy = window.__authorship.cy();
-      return { lin: ['2','3.3','4','11','13'].every(id => cy.getElementById(id).hasClass('lin')),
-               dimmed: ['3.1','3.2','5','9','10','12'].every(id => cy.getElementById(id).hasClass('dim')) }; }""")
-    assert dim == {"lin": True, "dimmed": True}
-    # all edges: the lineage also runs through the rule edges (responses)
-    page.uncheck("#gen-confirmed")
-    wait_js(page, "() => document.getElementById('gen-lineage').dataset.lineage.split(',').includes('9')")
 
-    # Replay: the slider hides everything after the chosen seq, in every graph view
-    click_tab(page, "replay")
-    page.evaluate("""() => { const s = document.getElementById('rp-slider'); const m = window.__authorship.model();
-      s.value = String(m.seqs.indexOf(4)); s.dispatchEvent(new Event('input')); }""")
-    wait_js(page, "() => window.__authorship.state.seq === 4")
-    vis = page.evaluate("""() => { const cy = window.__authorship.cy();
-      return { four: cy.getElementById('4').visible(), opt: cy.getElementById('3.3').visible(),
-               eleven: cy.getElementById('11').visible(), five: cy.getElementById('5').visible() }; }""")
-    assert vis == {"four": True, "opt": True, "eleven": False, "five": False}
-    assert "seq=4" in page.url
-    for sub in ("genealogy", "branches"):
-        page.select_option("#replay-view", sub)
-        time.sleep(0.2)
-    rows = page.evaluate("() => window.__authorshipBranches.nodes.map(n => n.id)")
-    assert rows == ["2", "3", "3.1", "3.2", "3.3", "4"]
-    page.click("#rp-next")
-    wait_js(page, "() => window.__authorship.state.seq === 5")
-    page.click("#rp-live")
-    wait_js(page, "() => window.__authorship.state.seq === null")
-    page.select_option("#replay-view", "reasoning")
-
-    # Branches: approaches as branches, adoption as merge, discards as dead ends with the reason
-    click_tab(page, "branches")
-    wait_js(page, "() => document.querySelectorAll('#branches .row').length === 15")
-    br = page.evaluate("""() => { const B = window.__authorshipBranches; const o = {};
-      B.branches.forEach(b => { o[b.root] = { kind: b.endKind, end: b.end, note: b.note, col: b.col }; }); return o; }""")
-    assert br["3.2"]["kind"] == "dead" and br["3.2"]["end"] == "11" and "rejected at #11" in br["3.2"]["note"]
-    assert br["10"]["kind"] == "dead"
-    assert br["4"]["kind"] == "merge" and br["4"]["end"] == "11"
-    assert br["3.3"]["kind"] == "modified" and br["3.3"]["col"] == br["4"]["col"]
-    assert br["3.1"]["kind"] == "open"
-    svg_text = page.inner_text("#branches")
-    assert "✗ rejected at #11" in svg_text and "adopted at #11" in svg_text
-    page.click('#branches .row[data-id="11"]')
-    wait_js(page, "() => document.getElementById('detail').textContent.indexOf('#11') >= 0")
-
-    # Review: accept one item through the UI; the returned #seq is shown and a Confirm entry exists
-    click_tab(page, "review")
-    wait_js(page, "() => document.querySelectorAll('#review li[data-key]').length === 2")
+def test_browser_review_records_answers(browser, served):
+    store = served.store
+    ctx, page, problems = open_page(browser, served, "view=review")
+    wait_js(page, "() => document.querySelectorAll('#review-pending .q-card').length === 2")
     assert page.inner_text("#review-count") == "2"
-    n_before = len(entries(store))
-    item = '#review li[data-key="4|milestone:conception_candidate"]'
-    page.click(item + " button.accept")
-    wait_js(page, "() => document.getElementById('review-recorded').textContent.indexOf('Recorded as #') >= 0")
-    expected = n_before + 1
-    assert "Recorded as #%d" % expected in page.inner_text("#review-recorded")
+    qs = page.inner_text("#review-pending")
+    assert "Is #4 a conception moment: you introduced a new technical element?" in qs and "classifier 83% sure" in qs
+    assert "Is it right that #4 rejects #3.1?" in qs
+    n = len(entries(store))
+    page.click('#review-pending .q-card[data-label="milestone:conception_candidate"] button.yes')
+    wait_js(page, "() => /Recorded as #/.test(document.getElementById('review-pending').textContent) || document.querySelectorAll('#review-pending .q-card').length === 1")
+    wait_js(page, "() => document.querySelectorAll('#review-pending .q-card').length === 1", timeout=15)
+    e = entries(store)[n]
+    assert (e["event"], e["actor"], e["decision"], e["label"], e["target_seq"]) == ("Confirm", "human", "accept", "milestone:conception_candidate", 4)
+    # change the edge suggestion to another relation
+    card = '#review-pending .q-card[data-label="edge:4:rejects:3.1"]'
+    page.click(card + " button:has-text('Change')")
+    page.select_option(card + " select", "edge:4:modifies:3.1")
+    page.click(card + " button:has-text('Save change')")
+    wait_js(page, "() => document.querySelectorAll('#review-pending .q-card').length === 0", timeout=15)
     last = entries(store)[-1]
-    assert last["seq"] == expected and last["event"] == "Confirm" and last["actor"] == "human"
-    assert last["decision"] == "accept" and last["label"] == "milestone:conception_candidate" and last["target_seq"] == 4
-    assert last["annotation_id"] and last["annotation_id"].startswith("ann_")
-    # the queue refreshes: one item left; edit it into another relation
-    wait_js(page, "() => document.querySelectorAll('#review li[data-key]').length === 1")
-    edge_item = '#review li[data-key="4|edge:4:rejects:3.1"]'
-    page.click(edge_item + " button.edit")
-    page.fill(edge_item + " .edit-row input", "edge:4:objects_to:3.1")
-    page.click(edge_item + " button.save")
-    wait_js(page, "() => document.getElementById('review-recorded').textContent.indexOf('Recorded as #%d') >= 0" % (expected + 1))
-    last = entries(store)[-1]
-    assert last["decision"] == "edit" and last["label"] == "edge:4:rejects:3.1" and last["edited_label"] == "edge:4:objects_to:3.1"
+    assert last["decision"] == "edit" and last["edited_label"] == "edge:4:modifies:3.1"
+    done = len(confirms(store))
+    wait_js(page, "() => document.querySelectorAll('#review-done .done-row').length === %d" % min(done, 50))
+    assert "Changed" in page.inner_text("#review-done .done-row") and "#4 rejects #3.1 \u2192 #4 changes #3.1" in page.inner_text("#review-done .done-row")
     assert ledger.verify(store)["ok"]
-    wait_js(page, "() => document.querySelector('#review li.empty')")
-    wait_js(page, "() => document.querySelector('#confirms li[data-seq=\"%d\"]')" % (expected + 1))
-    wait_js(page, "() => /%d entries/.test(document.getElementById('chain-badge').textContent)" % (expected + 1))
-
-    # no horizontal page scroll at a narrow width; graphs pan inside their container
-    page.set_viewport_size({"width": 380, "height": 800})
-    for view in ("stages", "reasoning", "branches", "review"):
-        click_tab(page, view)
-        time.sleep(0.2)
-        assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"), view
+    # keyboard: arrow keys move between tabs
+    page.focus("#tab-review")
+    page.keyboard.press("ArrowLeft")
+    wait_js(page, "() => document.getElementById('tab-map').getAttribute('aria-selected') === 'true'")
     assert problems == []
     ctx.close()
 
 
 def test_browser_without_secret_is_read_only(browser, served):
     ctx, page, problems = open_page(browser, served, "view=review", with_secret=False)
-    wait_js(page, "() => document.querySelectorAll('#review li[data-key]').length === 2")
-    assert page.is_visible("#readonly-hint")
-    assert "viewer.py open" in page.inner_text("#readonly-hint")
-    assert page.eval_on_selector_all("#review button.accept, #review button.reject, #review button.edit",
-                                     "els => els.every(b => b.disabled)")
+    wait_js(page, "() => document.querySelectorAll('#review-pending .q-card').length === 2")
+    assert page.is_visible("#review-locked") and "authorship open" in page.inner_text("#review-locked")
+    assert page.eval_on_selector_all("#review-pending button", "els => els.every(b => b.disabled)")
     n = len(entries(served.store))
-    page.evaluate("() => document.querySelector('#review button.accept').click()")
-    time.sleep(0.3)
-    assert len(entries(served.store)) == n
-    # a forged request from the page without the secret is refused by the server
     status = page.evaluate("""() => fetch('/api/confirm', {method: 'POST', referrerPolicy: 'same-origin',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify({target_seq: 4, decision: 'accept', label: 'x'})})
       .then(r => r.status)""")
@@ -475,17 +431,24 @@ def test_browser_without_secret_is_read_only(browser, served):
 
 
 def test_browser_badge_shows_broken_chain(browser, served):
-    ctx, page, problems = open_page(browser, served, "view=stages")
+    ctx, page, problems = open_page(browser, served)
     assert page.inner_text("#chain-badge").startswith("✓")
     tamper(served.store, 11, "webhook", "webhoox")
     # the page notices on its next poll (4 s): the etag changes even though the head did not
     wait_js(page, "() => /broken at #11/.test(document.getElementById('chain-badge').textContent)", timeout=15)
-    assert "broken" in page.get_attribute("#chain-badge", "class")
-    assert page.is_visible("#broken-banner") and "broken at #11" in page.inner_text("#broken-banner")
+    assert "bad" in page.get_attribute("#chain-badge", "class")
+    assert page.is_visible("#broken-banner") and "#11 was changed" in page.inner_text("#broken-banner")
+    assert "Broken at #11" in page.inner_text("#kpis")
     ctx.close()
-    # and a fresh load shows it straight away
-    ctx, page, _ = open_page(browser, served, "view=reasoning")
-    assert page.inner_text("#chain-badge") == "✗ broken at #11"
+
+
+def test_browser_phone_width_has_no_page_scroll(browser, served):
+    ctx, page, problems = open_page(browser, served, viewport={"width": 380, "height": 800})
+    for view in ("overview", "timeline", "map", "review"):
+        click_tab(page, view)
+        time.sleep(0.2)
+        assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"), view
+    assert problems == []
     ctx.close()
 
 
@@ -579,51 +542,35 @@ def test_browser_5000_nodes_budgets_and_5001_fallback(browser, project):
     store = synthetic_ledger(harness.init_store(project), 5000)
     s = Served(store)
     try:
-        ctx, page, problems = open_page(browser, s, "view=reasoning")
-        wait_js(page, "() => window.__authorshipPerf.ready", timeout=30)
-        layout = page.evaluate("() => window.__authorshipPerf.layout")
-        print("\n5000-node layout: %r" % layout)
-        assert layout["nodes"] == 5000 and layout["mode"] == "preset"
-        assert layout["totalMs"] < 3000, layout
-        assert page.evaluate("() => window.__authorship.cy().nodes().not('.lane').length") == 5000
+        ctx, page, problems = open_page(browser, s, "view=map&focus=all")
+        click_tab(page, "map")
+        perf = page.evaluate("() => ({layout: window.__authorshipPerf.layout, nodes: window.__authorshipPerf.nodes})")
+        print("\n5000-node map: %r" % perf)
+        assert perf["nodes"] == 5000 and perf["layout"] < 3000, perf
         pan = page.evaluate("() => window.__authorshipPerf.panTest(1000)")
         print("5000-node pan at zoom %.2f: %.1f fps (worst frame %d ms)" % (pan["zoom"], pan["fps"], pan["worstFrameMs"]))
         assert pan["fps"] >= 30, pan
-        # every other view loads too
-        click_tab(page, "genealogy")
-        wait_js(page, "() => document.getElementById('gen-lineage')")
         t0 = time.time()
-        click_tab(page, "branches")
-        wait_js(page, "() => document.querySelectorAll('#branches .row').length === 5000", timeout=20)
-        branches_s = time.time() - t0
-        print("5000-node branches render: %.2f s" % branches_s)
-        assert branches_s < 5
-        click_tab(page, "replay")
-        page.evaluate("""() => { const s = document.getElementById('rp-slider'); s.value = '100';
-          s.dispatchEvent(new Event('input')); }""")
-        wait_js(page, "() => window.__authorship.state.seq !== null")
-        hidden = page.evaluate("() => window.__authorship.cy().nodes('.future').length")
-        assert hidden > 4000
-        click_tab(page, "stages")
-        wait_js(page, "() => document.querySelectorAll('.stage-col').length === 5")
+        click_tab(page, "timeline")
+        wait_js(page, "() => document.querySelectorAll('.tl-item').length >= 300 && !!document.querySelector('.more-row')", timeout=20)
+        print("5000-node timeline: %.2f s" % (time.time() - t0))
+        assert time.time() - t0 < 5
+        click_tab(page, "overview")
+        wait_js(page, "() => document.querySelectorAll('.claim').length > 0")
         click_tab(page, "review")
         assert problems == []
         ctx.close()
 
-        # one more node: above graph.limits.stages_only_above, only Stages is offered
+        # one more node: above graph.limits.stages_only_above, the Map is off; everything else works
         ledger.write_note(store, "one more remark")
         assert len(viewer.build_graph(store)["nodes"]) == 5001
-        ctx, page, problems = open_page(browser, s, "view=reasoning")
+        ctx, page, problems = open_page(browser, s, "view=map")
         wait_js(page, "() => !document.getElementById('notice').hidden")
-        assert "Showing the Stages view only" in page.inner_text("#notice")
-        assert "5,001 nodes" in page.inner_text("#notice")
-        assert page.get_attribute("#tab-stages", "aria-selected") == "true"
-        assert page.is_visible("#panel-stages") and not page.is_visible("#panel-graph")
-        for v in ("reasoning", "genealogy", "branches", "replay"):
-            assert page.is_disabled("#tab-" + v)
-        assert page.is_enabled("#tab-review")
-        wait_js(page, "() => document.querySelectorAll('.stage-col').length === 5")
+        assert "the Map is off" in page.inner_text("#notice") and "5001" in page.inner_text("#notice")
+        assert page.is_disabled("#tab-map")
+        wait_js(page, "() => document.getElementById('tab-overview').getAttribute('aria-selected') === 'true'")
         assert page.evaluate("() => window.__authorship.cy()") is None
+        click_tab(page, "timeline")
         assert problems == []
         ctx.close()
     finally:

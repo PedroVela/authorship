@@ -4,113 +4,133 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Authorship ledger</title>
+<title>Authorship record</title>
 <link rel="stylesheet" href="app.css">
 <!-- app.js runs first: it moves the #k= secret out of the URL before anything else loads.
      Deferred scripts execute in document order; the app starts on DOMContentLoaded. -->
 <script src="app.js" defer></script>
 <script src="vendor/cytoscape.min.js" defer></script>
-<script src="vendor/elk.bundled.js" defer></script>
-<script src="vendor/cytoscape-elk.js" defer></script>
-<script src="vendor/cytoscape-expand-collapse.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="top">
   <div class="brand">
-    <h1>Authorship ledger</h1>
+    <span class="title">Authorship record</span>
     <span class="project" id="project"></span>
   </div>
   <div class="top-right">
     <span class="badge" id="chain-badge" role="status" aria-live="polite">Loading…</span>
     <span class="sync" id="sync" aria-live="off"></span>
-    <a class="report-link" href="/api/report.md" target="_blank" rel="noopener">Report (.md)</a>
+    <button class="link-btn" id="help-btn" type="button" aria-haspopup="dialog">How to read this</button>
+    <a class="link-btn" href="/api/report.md" target="_blank" rel="noopener">Report</a>
   </div>
 </header>
 <div class="banner danger" id="broken-banner" role="alert" hidden></div>
 <div class="banner notice" id="notice" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="Views" id="tabs">
-  <button role="tab" id="tab-stages" data-view="stages" aria-controls="panel-stages" aria-selected="true">Stages</button>
-  <button role="tab" id="tab-reasoning" data-view="reasoning" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Reasoning</button>
-  <button role="tab" id="tab-genealogy" data-view="genealogy" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Genealogy</button>
-  <button role="tab" id="tab-branches" data-view="branches" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Branches</button>
-  <button role="tab" id="tab-replay" data-view="replay" aria-controls="panel-graph" aria-selected="false" tabindex="-1">Replay</button>
-  <button role="tab" id="tab-review" data-view="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">Review <span class="count" id="review-count"></span></button>
+  <button role="tab" id="tab-overview" data-view="overview" aria-controls="panel-overview" aria-selected="true">
+    <span class="tab-name">Overview</span><span class="tab-hint">What you invented</span></button>
+  <button role="tab" id="tab-timeline" data-view="timeline" aria-controls="panel-timeline" aria-selected="false" tabindex="-1">
+    <span class="tab-name">Timeline</span><span class="tab-hint">What happened, in order</span></button>
+  <button role="tab" id="tab-map" data-view="map" aria-controls="panel-map" aria-selected="false" tabindex="-1">
+    <span class="tab-name">Map</span><span class="tab-hint">How the ideas connect</span></button>
+  <button role="tab" id="tab-review" data-view="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">
+    <span class="tab-name">Review <span class="count" id="review-count" hidden></span></span><span class="tab-hint">Check the labels</span></button>
 </nav>
 
 <main id="main">
-  <section id="panel-stages" class="panel" role="tabpanel" aria-labelledby="tab-stages">
-    <p class="hint">One column per stage, in ledger order. Expand an entry for its full text or diff. Discarded approaches branch off as dead ends.</p>
-    <div class="stages" id="stages"></div>
+  <!-- Overview -->
+  <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+    <div class="panel-head">
+      <h1>What you invented</h1>
+      <p class="lede">Each claim, the elements it rests on, and who contributed each one. Everything cites the ledger entry it comes from, as <code>#seq</code>.</p>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div id="inventions"></div>
+    <div id="against"></div>
+    <div id="stages-summary"></div>
   </section>
 
-  <section id="panel-graph" class="panel" role="tabpanel" aria-labelledby="tab-reasoning" hidden>
-    <div class="toolbar" id="toolbar">
-      <div class="tool-group" id="tools-reasoning">
-        <button type="button" id="btn-fit">Fit</button>
-        <button type="button" id="btn-collapse">Collapse options</button>
-        <button type="button" id="btn-expand">Expand options</button>
-      </div>
-      <div class="tool-group" id="tools-replay" hidden>
-        <label for="replay-view">Replay in</label>
-        <select id="replay-view">
-          <option value="reasoning">Reasoning</option>
-          <option value="genealogy">Genealogy</option>
-          <option value="branches">Branches</option>
-        </select>
-      </div>
-      <div class="replay" id="replay-bar" role="group" aria-label="Replay over time">
-        <button type="button" id="rp-play" aria-label="Play">▶</button>
-        <button type="button" id="rp-prev" aria-label="Previous turn">‹</button>
-        <input type="range" id="rp-slider" min="0" max="0" step="1" value="0" aria-label="Show entries up to seq">
-        <button type="button" id="rp-next" aria-label="Next turn">›</button>
-        <button type="button" id="rp-live">Latest</button>
-        <output id="rp-label" for="rp-slider"></output>
-      </div>
+  <!-- Timeline -->
+  <section class="panel" id="panel-timeline" role="tabpanel" aria-labelledby="tab-timeline" hidden>
+    <div class="panel-head">
+      <h1>What happened, in order</h1>
+      <p class="lede">The whole conversation, grouped by stage. Open any row for its full text, the code change, and the labels on it.</p>
     </div>
-    <div class="graph-body">
-      <div class="canvas-wrap">
-        <div id="cy" class="cy" tabindex="0" aria-label="Graph. Use arrow keys to pan, plus and minus to zoom."></div>
-        <div id="lane-labels" class="lane-labels" aria-hidden="true"></div>
-        <div id="branches" class="branches" tabindex="0" aria-label="Branches graph" hidden></div>
-        <div class="legend" id="legend" aria-label="Legend">
-          <span><i class="sh human"></i>Human</span>
-          <span><i class="sh ai"></i>AI</span>
-          <span><i class="sh dead"></i>Discarded / rejected</span>
-          <span><i class="ln solid"></i>Relation</span>
-          <span><i class="ln neg"></i>Objects to / rejects</span>
-          <span><i class="ln lineage"></i>Modifies / refines / derived from</span>
-          <span><i class="ln ok"></i>Implements / supports</span>
-          <span><i class="ln faint"></i>Suggested (unconfirmed)</span>
-          <span class="gen-only"><i class="sh lin"></i>Lineage</span>
-          <span class="br-only"><i class="ln ok"></i>Merge: approach adopted</span>
-          <span class="br-only"><b class="x">✗</b>Dead end, with its reason</span>
-        </div>
+    <div class="filters" role="group" aria-label="Show">
+      <div class="seg" id="tl-filter">
+        <button type="button" data-f="key" aria-pressed="true">Key moments</button>
+        <button type="button" data-f="all" aria-pressed="false">Everything</button>
       </div>
-      <aside class="side" id="side">
-        <section class="gen" id="gen-panel" hidden aria-labelledby="gen-h">
-          <h2 id="gen-h">Genealogy</h2>
-          <label for="gen-claim">Claim</label>
-          <select id="gen-claim"></select>
-          <label class="check"><input type="checkbox" id="gen-confirmed"> Confirmed edges only</label>
-          <div id="gen-summary" class="gen-summary" aria-live="polite"></div>
-        </section>
-        <section class="detail" id="detail" aria-live="polite">
-          <p class="hint">Select a node to see its entry.</p>
-        </section>
-      </aside>
+      <label class="search"><span class="sr">Search</span>
+        <input type="search" id="tl-search" placeholder="Search the record" autocomplete="off"></label>
+    </div>
+    <div id="timeline"></div>
+  </section>
+
+  <!-- Map -->
+  <section class="panel wide" id="panel-map" role="tabpanel" aria-labelledby="tab-map" hidden>
+    <div class="panel-head">
+      <h1>How the ideas connect</h1>
+      <p class="lede">Each shape is an entry; each line says how a later entry relates to an earlier one. Pick a claim to see only what it is built from, or show the whole record.</p>
+    </div>
+    <div class="filters">
+      <label>Focus
+        <select id="map-focus"></select></label>
+      <label class="time">Record up to
+        <input type="range" id="map-slider" min="1" max="1" value="1" aria-describedby="map-slider-out">
+        <output id="map-slider-out"></output></label>
+      <button type="button" id="map-play" class="btn">Play</button>
+      <button type="button" id="map-fit" class="btn">Fit</button>
+    </div>
+    <div class="map-wrap">
+      <div class="map-col">
+        <div class="map-box"><div id="map" role="img" aria-label="Map of how the entries relate"></div><div class="tip" id="map-tip" role="tooltip" hidden></div></div>
+        <ul class="legend" id="map-legend"></ul>
+      </div>
+      <aside class="detail" id="map-detail" aria-live="polite"><p class="muted">Select a shape to read its entry.</p></aside>
     </div>
   </section>
 
-  <section id="panel-review" class="panel" role="tabpanel" aria-labelledby="tab-review" hidden>
-    <p class="hint" id="review-hint">Tier 1 suggestions waiting for your decision. Each decision is written to the ledger as a <code>Confirm</code> entry signed by you.</p>
-    <p class="banner notice" id="readonly-hint" hidden>Read-only. Open the viewer from your terminal: <code>python3 &lt;plugin&gt;/scripts/viewer.py open</code></p>
-    <div id="review-recorded" class="review-recorded" role="status" aria-live="polite"></div>
-    <ol class="review" id="review"></ol>
-    <h2 class="sub">Recent confirmations</h2>
-    <ol class="confirms" id="confirms"></ol>
+  <!-- Review -->
+  <section class="panel" id="panel-review" role="tabpanel" aria-labelledby="tab-review" hidden>
+    <div class="panel-head">
+      <h1>Check the labels</h1>
+      <p class="lede">The classifier labels every entry on its own. Labels in your favor that it was unsure of wait here for you; your answer is recorded in the ledger, in your name. You can also correct any label it already counted.</p>
+    </div>
+    <p class="hint" id="review-locked" hidden>Answers are disabled on this page. Open it from your terminal with <code>authorship open</code>, or answer with <code>authorship review</code>.</p>
+    <h2 class="section">Waiting for you <span class="muted" id="review-n"></span></h2>
+    <div id="review-pending"></div>
+    <details class="auto-list" id="review-auto-box">
+      <summary>Counted automatically <span class="muted" id="review-auto-n"></span></summary>
+      <div id="review-auto"></div>
+    </details>
+    <h2 class="section">Your answers</h2>
+    <div id="review-done"></div>
   </section>
 </main>
+
+<dialog id="help" aria-labelledby="help-title">
+  <form method="dialog">
+    <h2 id="help-title">How to read this</h2>
+    <dl class="help-list">
+      <dt>Overview</dt><dd>Your claims and what each rests on. Every element says whether it came from you, from Claude, or from you changing something Claude proposed.</dd>
+      <dt>Timeline</dt><dd>The record in order, grouped by stage of the work. "Key moments" hides Claude's routine work; "Everything" shows every entry.</dd>
+      <dt>Map</dt><dd>The same entries as a picture: problems on top, ideas in the middle, decisions and claims below, Claude's code and tests at the bottom. Time runs left to right. Drag the slider to replay how it grew.</dd>
+      <dt>Review</dt><dd>Labels the classifier was not sure of, for you to accept, reject or change. Only your answers are evidence; the classifier's labels are opinions.</dd>
+    </dl>
+    <h3>Symbols</h3>
+    <ul class="help-symbols">
+      <li><i class="sym you" aria-hidden="true"></i> Circle: written by you</li>
+      <li><i class="sym ai" aria-hidden="true"></i> Square: written by Claude</li>
+      <li><i class="sym dead" aria-hidden="true"></i> Dashed outline: discarded or rejected</li>
+      <li><span class="lbl auto">idea</span> Dashed label: set by the classifier; solid: typed by you or confirmed</li>
+      <li><code>#4</code>: ledger entry 4; <code>#3.2</code>: option 2 of Claude's reply #3</li>
+    </ul>
+    <p class="muted">The ledger is append-only and hash-chained: the badge at the top turns red if any entry was changed after it was written.</p>
+    <div class="dialog-actions"><button class="btn primary" value="close">Close</button></div>
+  </form>
+</dialog>
 </body>
 </html>
