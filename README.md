@@ -125,13 +125,16 @@ flowchart TD
   ledger --> views
   views --> review(["You answer what the classifier was unsure of"])
   review -- "a Confirm entry, in your name" --> ledger
-  ledger -. "authorship seal" .-> ts["External timestamp"]
+  ledger -. "authorship seal: only a hash leaves" .-> tsa["Timestamp authority (RFC 3161)<br/>signed time, in seconds"]
+  ledger -. "authorship seal: only a hash leaves" .-> btc[("Bitcoin blockchain<br/>via OpenTimestamps, within hours")]
   classDef store fill:#f3f2ee,stroke:#52514e,color:#0b0b0b
   classDef person fill:#2a78d6,stroke:#2a78d6,color:#fff
   classDef ai fill:#eb6834,stroke:#eb6834,color:#fff
   class ledger,ann store
   class you,review person
   class claude ai
+  classDef chain fill:#fff4dc,stroke:#c98500,color:#0b0b0b
+  class btc,tsa chain
 ```
 
 Two stores, kept apart on purpose:
@@ -234,6 +237,46 @@ Blue rounded shapes are your entries; orange squares are Claude's; dashed shapes
 2. An **approach** borrowed from Claude (#3.3: cache it).
 3. Your **mechanism** (#4: invalidate by sequence number), proven by tests (#8).
 4. An **operative** decision and claim (#11, #13).
+
+### Where the blockchain comes in
+
+The hash chain makes any edit to an entry visible. It cannot, on its own, stop someone who controls the files from rewriting the whole chain with fresh, consistent hashes. External timestamps close that gap. `authorship seal` sends only the **hash of the latest entry** out of your machine, never your text, to two independent places:
+
+1. **A timestamp authority (RFC 3161,** freetsa.org by default**).** It signs "this hash existed at this time" and answers in seconds.
+2. **OpenTimestamps, which writes it into the Bitcoin blockchain.** Calendars aggregate many hashes into one Bitcoin transaction. Once that transaction is in a block, usually within a few hours, the proof points to that block. Nobody can backdate it, and anyone can check it with the free `ots` tool, without trusting this plugin.
+
+```mermaid
+sequenceDiagram
+  actor H as You
+  participant A as authorship seal
+  participant T as Timestamp authority (RFC 3161)
+  participant O as OpenTimestamps calendars
+  participant B as Bitcoin blockchain
+  H->>A: authorship seal (or every session end, with AUTHORSHIP_ANCHOR=1)
+  Note over A: hash of the ledger head, e.g. entry 14
+  A->>T: the hash only
+  T-->>A: signed timestamp, in seconds
+  Note over A: Anchor entry: pending, RFC 3161 proof stored
+  A->>O: the hash only (ots stamp)
+  O-->>A: pending proof
+  O->>B: many hashes in one transaction
+  Note over B: in a block within a few hours
+  A->>O: at a later session start: ots upgrade
+  O-->>A: complete proof, pointing to the Bitcoin block
+  Note over A: Anchor entry: complete
+```
+
+What it proves: the whole record up to the sealed entry existed, exactly as it is, at that time. If anyone later rewrites any of those entries, even with a consistent new chain, `authorship verify --anchors` fails, because the recomputed head no longer matches the anchored one. The proofs are kept in `.authorship/anchors/`; commit them with the repository.
+
+To turn it on:
+
+```bash
+pip install opentimestamps-client   # provides `ots`; without it, only the RFC 3161 timestamp is used
+authorship seal                     # seal now
+export AUTHORSHIP_ANCHOR=1          # optional: seal automatically at the end of every session
+```
+
+The status line and the Overview show how far the record is sealed (`sealed to #N`). Entries after that are protected by the hash chain, but not yet by an external timestamp.
 
 ### What you see at the end
 
