@@ -15,10 +15,10 @@ To see what this looks like in practice, jump to [How a conversation becomes evi
 
 ## Start in three steps
 
-**1. Install the plugin** (inside Claude Code; `<owner>/authorship` is the GitHub repository that holds this project):
+**1. Install the plugin** (inside Claude Code):
 
 ```text
-/plugin marketplace add <owner>/authorship
+/plugin marketplace add PedroVela/authorship
 /plugin install authorship@authorship-dev
 ```
 

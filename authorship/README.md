@@ -17,10 +17,10 @@ This is the reference. New here? Start with the [project README](../README.md): 
 
 ## Install
 
-From GitHub, once, with `<owner>/authorship` being the repository that holds this plugin (if it is private, your git credentials must reach it):
+From GitHub, once (the repository is private, so your git credentials must reach it):
 
 ```text
-/plugin marketplace add <owner>/authorship
+/plugin marketplace add PedroVela/authorship
 /plugin install authorship@authorship-dev
 ```
 
