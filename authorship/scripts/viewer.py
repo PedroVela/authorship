@@ -74,19 +74,21 @@ def build_graph(store):
         entries.append({
             "seq": r["seq"], "ts": r["ts"], "event": r["event"], "actor": r["actor"], "session": r["session"],
             "kind": r["kind"], "tool": r["tool"], "file": r["file"], "outcome": r["outcome"], "stage": r["stage"],
-            "hash": r["hash"], "tags": json.loads(r["tags_json"] or "[]"), "preview": rules.short(r["text"], 600),
+            "hash": r["hash"], "tags": json.loads(r["tags_json"] or "[]"),
+            "auto_tags": json.loads(r["auto_tags_json"] or "[]"), "preview": rules.short(r["text"], 600),
             "text_len": len(r["text"] or ""), "blob": e.get("blob"), "command": e.get("command"),
             "input_blob": (e.get("input") or {}).get("blob") if isinstance(e.get("input"), dict) else None,
             "response_blob": (e.get("response") or {}).get("blob") if isinstance(e.get("response"), dict) else None,
             "error": e.get("error"), "reason": e.get("reason"), "author": e.get("author"),
             "decision": e.get("decision"), "label": e.get("label"), "target_seq": e.get("target_seq"),
         })
-    for r in conn.execute("SELECT n.*, e.ts, e.event, e.tags_json, e.hash, e.file, e.tool, e.outcome, e.session"
+    for r in conn.execute("SELECT n.*, e.ts, e.event, e.tags_json, e.auto_tags_json, e.hash, e.file, e.tool, e.outcome, e.session"
                           " FROM nodes n JOIN entries e ON e.seq = n.seq ORDER BY n.seq, n.node_id"):
         nodes.append({"id": r["node_id"], "seq": r["seq"], "hash": r["hash"], "option": r["option"],
                       "ibis": r["ibis_type"], "author": r["author"], "stage": r["stage"], "status": r["status"],
                       "maturity": r["maturity"], "label": r["label"], "event": r["event"], "ts": r["ts"],
-                      "tags": json.loads(r["tags_json"] or "[]"), "file": r["file"], "tool": r["tool"],
+                      "tags": json.loads(r["tags_json"] or "[]"), "auto_tags": json.loads(r["auto_tags_json"] or "[]"),
+                      "file": r["file"], "tool": r["tool"],
                       "outcome": r["outcome"], "session": r["session"],
                       "milestones": ms.get(r["node_id"], []) if "." not in r["node_id"] else []})
     edges = [{"src": r["src"], "dst": r["dst"], "type": r["type"], "source": r["source"]}
@@ -125,8 +127,8 @@ def build_report(store):
                                                           "" if m["score"] is None else "%.2f" % m["score"], m["confirmation"]))
     lines.append("")
     for claim in [r[0] for r in q.conn.execute("SELECT node_id FROM nodes WHERE ibis_type='claim' ORDER BY seq")]:
-        lin = q.lineage(claim, confirmed_only=True)
-        lines += ["## Claim #%s lineage (confirmed edges)" % claim, ""]
+        lin = q.lineage(claim, curated=True)
+        lines += ["## Claim #%s lineage (confirmed and automatic edges)" % claim, ""]
         for n in lin["items"]:
             lines.append("- #%s (%s) [%s] %s" % (n["node"], n["hash"], n["author"], n["text"]))
         for a in lin["summary"]["ai_elements"]:

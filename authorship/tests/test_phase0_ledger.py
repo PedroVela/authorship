@@ -266,7 +266,7 @@ def test_verify_blob_cache_still_catches_tampering(qr):
 
 
 def test_init_hint_once_per_git_project(project, tmp_path):
-    env = harness.hook_env(project, CLAUDE_PLUGIN_DATA=str(tmp_path / "data"))
+    env = harness.hook_env(project, CLAUDE_PLUGIN_DATA=str(tmp_path / "data"), AUTHORSHIP_HINT="1")
     start = {"hook_event_name": "SessionStart", "session_id": "h", "cwd": project, "source": "startup"}
     assert run_hook(project, start, "session-start", env=env).stdout == ""  # not a git repo: silent
     os.makedirs(os.path.join(project, ".git"))

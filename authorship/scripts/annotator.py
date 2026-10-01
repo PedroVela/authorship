@@ -241,12 +241,20 @@ def read_annotations(store):
     return out
 
 
-def latest_by_target(anns, tier0):
-    """{target_seq: annotation} for the newest non-superseded annotation of one tier."""
+def method_of(a):
+    """rules (Tier 0), auto (automatic classifier) or jev (Tier 1, opt-in)."""
+    return a.get("method") or ("rules" if a.get("model") == rules.RULES_VERSION else "jev")
+
+
+def latest_by_target(anns, tier0=None, method=None):
+    """{target_seq: annotation} for the newest non-superseded annotation of one method.
+    tier0=True means method "rules"; tier0=False means "jev" (kept for older callers)."""
+    if method is None:
+        method = "rules" if tier0 else "jev"
     superseded = {a.get("supersedes") for a in anns if a.get("supersedes")}
     out = {}
     for a in anns:
-        if (a.get("model") == rules.RULES_VERSION) != tier0 or a["id"] in superseded:
+        if method_of(a) != method or a["id"] in superseded:
             continue
         out[a["target_seq"]] = a
     return out
@@ -265,8 +273,10 @@ def _new_id():
 # Tier 0
 
 
-def tier0_milestones(store, entries):
-    """Deterministic milestones over the whole ledger: {target_seq: [milestone]}."""
+def tier0_milestones(store, entries, idea_seqs=()):
+    """Deterministic milestones over the whole ledger: {target_seq: [milestone]}.
+    idea_seqs: entries the automatic classifier found to be ideas, hypotheses or
+    decisions; they anchor reduction-to-practice evidence like tagged ones."""
     out = {}
 
     def add(seq, m):
@@ -284,7 +294,7 @@ def tier0_milestones(store, entries):
                 if m == "stage_opened":
                     d["detail"] = e.get("stage")
                 add(seq, d)
-            if any(t in tags for t in IDEA_TAGS):
+            if any(t in tags for t in IDEA_TAGS) or seq in idea_seqs:
                 idea, edited, red = seq, set(), False
         if ev in ("Stop", "SubagentStop"):
             for label in rules.parse_ai_proposals(rules.entry_text(e, store)):
@@ -307,10 +317,18 @@ def tier0_milestones(store, entries):
     return out
 
 
+def auto_idea_seqs(anns):
+    out = set()
+    for seq, a in latest_by_target(anns, method="auto").items():
+        if set(a.get("auto_tags") or []) & set(IDEA_TAGS):
+            out.add(seq)
+    return out
+
+
 def run_tier0(store, entries, anns):
     by_seq = {e["seq"]: e for e in entries}
     current = latest_by_target(anns, tier0=True)
-    wanted = tier0_milestones(store, entries)
+    wanted = tier0_milestones(store, entries, auto_idea_seqs(anns))
     written = 0
     for seq in sorted(set(wanted) | set(current)):
         ms = wanted.get(seq, [])
@@ -458,10 +476,23 @@ def run_tier1(store, entries, anns, provider=None, cfg=None):
 # ---------------------------------------------------------------------------
 
 
-def run_once(store, provider=None, cfg=None, blob_cache=None):
+def auto_enabled():
+    return os.environ.get("AUTHORSHIP_AUTO", "1") != "0"
+
+
+def run_once(store, provider=None, cfg=None, blob_cache=None, classifier=None):
     entries = [e for _, _, e in ledger.read_entries(store) if e]
+    out = {"auto": 0, "auto_state": "off", "tier0": 0, "tier1": 0, "tier1_state": "off"}
+    if classifier is not None or auto_enabled():
+        import autoclass
+
+        try:
+            out["auto"], out["auto_state"] = autoclass.run(store, entries, read_annotations(store), classifier)
+        except Exception as exc:
+            store.log_error("annotator.auto", exc)
+            out["auto_state"] = "error"
     anns = read_annotations(store)
-    out = {"tier0": run_tier0(store, entries, anns), "tier1": 0, "tier1_state": "off"}
+    out["tier0"] = run_tier0(store, entries, anns)
     if jev_enabled() or provider is not None:
         import jev_client
 

@@ -8,6 +8,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import harness  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_live_classifier(monkeypatch):
+    """Tests that want the classifier pass a FakeClassifier explicitly."""
+    monkeypatch.setenv("AUTHORSHIP_AUTO", "0")
+    monkeypatch.setenv("AUTHORSHIP_HINT", "0")
+
+
 @pytest.fixture
 def project(tmp_path):
     p = tmp_path / "proj"

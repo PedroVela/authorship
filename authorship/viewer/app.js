@@ -419,6 +419,9 @@
     head.appendChild(el('span', { class: 'seq' }, '#' + e.seq));
     head.appendChild(el('span', { class: 'kind' }, (e.actor === 'human' ? 'Human · ' : 'AI · ') + entryKind(e)));
     (e.tags || []).forEach(function (t) { head.appendChild(el('span', { class: 'chip tag' }, t)); });
+    (e.auto_tags || []).forEach(function (t) {
+      head.appendChild(el('span', { class: 'chip tag auto', title: 'set automatically by the classifier' }, t + ' · auto'));
+    });
     if (dead) head.appendChild(el('span', { class: 'chip st-' + n.status }, n.status === 'rejected' ? 'rejected' : 'discarded'));
     else { var c = nodeStatusChip(n); if (c) head.appendChild(c); }
     if (e.kind === 'tool' && n && n.ibis === 'argument') {
@@ -428,8 +431,8 @@
     }
     ((n && n.milestones) || []).forEach(function (ms) {
       if (ms.type === 'session_boundary') return;
-      head.appendChild(el('span', { class: 'chip ms', title: 'tier ' + ms.tier + (ms.confirmed === 1 ? ', confirmed' : ms.confirmed === -1 ? ', rejected' : ', pending') },
-        ms.type.replace(/_/g, ' ') + (ms.confirmed === 1 ? ' ✓' : ms.confirmed === -1 ? ' ✗' : ' ?')));
+      head.appendChild(el('span', { class: 'chip ms', title: 'tier ' + ms.tier + (ms.confirmed === 1 ? ', confirmed' : ms.confirmed === 2 ? ', automatic' : ms.confirmed === -1 ? ', rejected' : ', pending') },
+        ms.type.replace(/_/g, ' ') + (ms.confirmed === 1 ? ' ✓' : ms.confirmed === 2 ? ' · auto' : ms.confirmed === -1 ? ' ✗' : ' ?')));
     });
     li.appendChild(head);
     var title = e.kind === 'tool' ? (e.command || (n && n.label) || entryKind(e)) : (e.preview || '');
@@ -721,6 +724,7 @@
     row('Time', n.ts);
     row('Hash', (n.hash || '').slice(0, 16));
     row('Tags', (n.tags || []).join(' '));
+    if ((n.auto_tags || []).length) row('Automatic tags', n.auto_tags.join(' '));
     if (n.file) row('File', n.file);
     box.appendChild(dl);
     var why = deadReason(n);
@@ -731,7 +735,7 @@
       n.milestones.forEach(function (m) {
         ul.appendChild(el('li', null, m.type.replace(/_/g, ' ') + ' · tier ' + m.tier +
           (m.score != null ? ' · ' + Number(m.score).toFixed(2) : '') + ' · ' +
-          (m.confirmed === 1 ? 'confirmed' : m.confirmed === -1 ? 'rejected' : 'pending') +
+          (m.confirmed === 1 ? 'confirmed' : m.confirmed === 2 ? 'automatic' : m.confirmed === -1 ? 'rejected' : 'pending') +
           (m.evidence_seq ? ' · evidence #' + m.evidence_seq : '')));
       });
       box.appendChild(ul);

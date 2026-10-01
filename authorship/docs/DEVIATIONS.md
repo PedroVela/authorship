@@ -92,6 +92,23 @@ Where the spec (v0.1) and reality differed, the plugin follows reality. Each ite
   pins Chromium build 1223, which is not cached. The tests fall back to the cached `chromium_headless_shell-*` builds,
   then to `channel="chrome"`.
 
+## Automatic classification (after the first build)
+
+The spec makes Tier 0 depend on tags the human types, and keeps Tier 1 (Jev) opt-in, behind a typed consent, with every favorable label waiting for confirmation. In use that was too much friction: the human should only have to turn the plugin on. So:
+
+28. **A background classifier labels every entry.** It labels human prompts and notes, and AI replies. It produces tags, stages, milestones and lineage edges with no action from the human. See [CLASSIFICATION.md](CLASSIFICATION.md). Typed tags still work and always win.
+29. **Two backends, picked automatically.**
+    - **Claude** (`claude -p`, Sonnet, the existing login) by default. Sonnet replaced Haiku after Haiku gave different labels on repeated runs of the golden session.
+    - **Jev** when a Jev key is set. Setting the key replaces the consent note typed in a terminal (spec 6.8): the human chooses by configuring the key, and every annotation records the backend.
+30. **Automatic labels count without confirmation, still asymmetric.**
+    - Favorable labels count from 0.80, wait for review between 0.50 and 0.80, and are dropped below that.
+    - Unfavorable labels count from 0.50.
+    - A new confirmation state, `automatic` (`milestones.confirmed = 2`), sits beside confirmed (1), pending (0) and rejected (-1).
+31. **A new edge source, `auto`.** The classifier's edges are stored as source `auto` and count for node status and lineage. Jev Tier 1 suggestions keep source `annotation` and still wait for confirmation. A new lineage mode, `curated` (confirmed + auto), drives the disclosure, the report and claim genealogy, leaving out the rule that links every prompt to the previous reply.
+32. **Index schema `index-v2`** adds `entries.stage_tag` and `entries.auto_tags_json`, plus `annotations.method`, `auto_tags_json` and `stage`. Older indexes are rebuilt automatically.
+33. **Conception follows the spec's rule,** whatever the model calls the entry. That rule is a new element plus a stance of originates, modifies or rejects. Reduction-to-practice evidence also anchors on ideas the classifier found.
+34. **`authorship review --all`** lists automatic labels and links too, so the human can reject or edit any of them. `authorship status` prints the classifier's state.
+
 ## Process
 
 27. Phases 4 (viewer) and 5 (skills, anchoring, status line) were built in parallel, each against its own acceptance tests, and the full suite was run before each commit.

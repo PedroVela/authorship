@@ -19,14 +19,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ledger  # noqa: E402
 import rules  # noqa: E402
 
-SCHEMA_VERSION = "index-v1"
+SCHEMA_VERSION = "index-v2"
 LINEAGE_TYPES = ("derived_from", "modifies", "refines", "responds_to")
+AUTO = 2  # milestones.confirmed: 1 confirmed by the human, 2 automatic, 0 pending, -1 rejected
 EDGE_TYPES = ("responds_to", "refines", "modifies", "implements", "supports", "objects_to", "rejects",
               "supersedes", "discards", "derived_from")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS entries(seq INTEGER PRIMARY KEY, ts TEXT, event TEXT, actor TEXT, session TEXT,
-  kind TEXT, tool TEXT, outcome TEXT, file TEXT, text TEXT, tags_json TEXT, hash TEXT, stage TEXT);
+  kind TEXT, tool TEXT, outcome TEXT, file TEXT, text TEXT, tags_json TEXT, hash TEXT, stage TEXT,
+  stage_tag TEXT, auto_tags_json TEXT DEFAULT '[]');
 CREATE TABLE IF NOT EXISTS nodes(node_id TEXT PRIMARY KEY, seq INTEGER, option INTEGER, ibis_type TEXT,
   stage TEXT, author TEXT, status TEXT, maturity TEXT, label TEXT);
 CREATE INDEX IF NOT EXISTS nodes_seq ON nodes(seq);
@@ -37,7 +39,8 @@ CREATE INDEX IF NOT EXISTS edges_dst ON edges(dst);
 CREATE TABLE IF NOT EXISTS confirmations(seq INTEGER PRIMARY KEY, target_seq INTEGER, target_hash TEXT,
   annotation_id TEXT, decision TEXT, label TEXT, edited_label TEXT);
 CREATE TABLE IF NOT EXISTS annotations(id TEXT PRIMARY KEY, target_seq INTEGER, model TEXT, questions_hash TEXT,
-  answers_json TEXT, milestones_json TEXT, edges_json TEXT, supersedes TEXT, superseded_by TEXT, ts TEXT);
+  answers_json TEXT, milestones_json TEXT, edges_json TEXT, supersedes TEXT, superseded_by TEXT, ts TEXT,
+  method TEXT, auto_tags_json TEXT, stage TEXT);
 CREATE TABLE IF NOT EXISTS milestones(target_seq INTEGER, type TEXT, tier INTEGER, score REAL, confirmed INTEGER,
   evidence_seq INTEGER, annotation_id TEXT);
 CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(text, tokenize='unicode61 remove_diacritics 2');
@@ -93,9 +96,9 @@ class Engine(object):
         stage = s["stage"] if actor != "system" and ev != "Confirm" else None
         text = rules.entry_text(e, self.store)
         self.conn.execute(
-            "INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO entries VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'[]')",
             (seq, e.get("ts"), ev, actor, e.get("session"), e.get("kind"), e.get("tool"), e.get("outcome"),
-             e.get("file"), text, json.dumps(tags), e.get("hash"), stage))
+             e.get("file"), text, json.dumps(tags), e.get("hash"), stage, e.get("stage")))
         searchable = " ".join(x for x in (text, e.get("command"), e.get("file"), e.get("error"), " ".join(tags)) if x)
         self.conn.execute("INSERT OR REPLACE INTO fts(rowid, text) VALUES(?, ?)", (seq, searchable))
 
@@ -183,10 +186,12 @@ def _load_annotations(conn, store):
             continue
         conn.execute(
             "INSERT OR REPLACE INTO annotations(id, target_seq, model, questions_hash, answers_json, milestones_json,"
-            " edges_json, supersedes, superseded_by, ts) VALUES(?,?,?,?,?,?,?,?,NULL,?)",
+            " edges_json, supersedes, superseded_by, ts, method, auto_tags_json, stage) VALUES(?,?,?,?,?,?,?,?,NULL,?,?,?,?)",
             (a.get("id"), a.get("target_seq"), a.get("model"), a.get("questions_hash"),
              json.dumps(a.get("answers") or {}), json.dumps(a.get("milestones") or []),
-             json.dumps(a.get("edges") or []), a.get("supersedes"), a.get("ts")))
+             json.dumps(a.get("edges") or []), a.get("supersedes"), a.get("ts"),
+             a.get("method") or ("rules" if a.get("model") == rules.RULES_VERSION else "jev"),
+             json.dumps(a.get("auto_tags") or []), a.get("stage")))
     _set_meta(conn, "annotations_offset", off + end + 1)
 
 
@@ -198,7 +203,7 @@ def recompute(conn, store):
     conf = effective_confirmations(conn)
 
     # confirmed edges
-    conn.execute("DELETE FROM edges WHERE source IN ('confirmed', 'annotation')")
+    conn.execute("DELETE FROM edges WHERE source IN ('confirmed', 'annotation', 'auto')")
     rejected = set()
     for (target, label), (decision, final, seq) in sorted(conf.items(), key=lambda kv: kv[1][2]):
         orig = parse_edge_label(label)
@@ -212,12 +217,15 @@ def recompute(conn, store):
         if parsed:
             conn.execute("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,?)", (parsed[0], parsed[2], parsed[1], "confirmed", seq))
     # annotation edges (suggestions) from active annotations, minus rejected ones
-    for r in conn.execute("SELECT id, edges_json FROM annotations WHERE superseded_by IS NULL ORDER BY id").fetchall():
+    # Machine edges, minus the ones the human rejected. The automatic classifier's
+    # edges count as they are ("auto"); Jev's wait for confirmation ("annotation").
+    for r in conn.execute("SELECT id, edges_json, method FROM annotations WHERE superseded_by IS NULL ORDER BY id").fetchall():
+        source = "auto" if r["method"] == "auto" else "annotation"
         for ed in json.loads(r["edges_json"] or "[]"):
             key = (str(ed.get("src")), ed.get("type"), str(ed.get("dst")))
             if key in rejected or key[1] not in EDGE_TYPES:
                 continue
-            conn.execute("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,NULL)", (key[0], key[2], key[1], "annotation"))
+            conn.execute("INSERT OR IGNORE INTO edges VALUES(?,?,?,?,NULL)", (key[0], key[2], key[1], source))
 
     # milestones
     conn.execute("DELETE FROM milestones")
@@ -235,10 +243,14 @@ def recompute(conn, store):
                     typ = decision[1].split(":", 1)[1]
             elif tier == 0 and (typ in rules.HUMAN_DECLARED or typ in rules.FACTUAL):
                 confirmed = 1  # declared by the human through a tag, or a structural fact
+            elif m.get("auto"):
+                confirmed = AUTO  # counted automatically; the human may still reject or edit it
             else:
                 confirmed = 0
             conn.execute("INSERT INTO milestones VALUES(?,?,?,?,?,?,?)",
                          (r["target_seq"], typ, tier, m.get("score"), confirmed, m.get("evidence_seq"), r["id"]))
+
+    apply_auto(conn)
 
     # node status and maturity
     conn.execute("UPDATE nodes SET status=NULL, maturity=NULL")
@@ -252,16 +264,47 @@ def recompute(conn, store):
     conn.execute("UPDATE nodes SET status='superseded' WHERE node_id IN (SELECT dst FROM edges WHERE type='supersedes'"
                  " AND source != 'annotation')")
     conn.execute("UPDATE nodes SET status='discarded' WHERE node_id IN (SELECT dst FROM edges WHERE type='discards'"
-                 " AND source != 'annotation') OR seq IN (SELECT seq FROM entries WHERE tags_json LIKE '%\"#discard\"%')"
+                 " AND source != 'annotation') OR seq IN (SELECT seq FROM entries WHERE tags_json LIKE '%\"#discard\"%' OR auto_tags_json LIKE '%\"#discard\"%')"
                  " AND option IS NULL AND node_id NOT LIKE '%.p%'")
     for r in conn.execute("SELECT id, target_seq, answers_json FROM annotations WHERE superseded_by IS NULL"
                           " ORDER BY ts, id").fetchall():
-        mat = (json.loads(r["answers_json"] or "{}").get("maturity") or {}).get("choice")
+        ans = json.loads(r["answers_json"] or "{}")
+        mat = ans.get("maturity")
+        if isinstance(mat, dict):  # Jev: {"choice": ...}
+            mat = mat.get("choice")
+        elif ans.get("kind") not in ("idea", "hypothesis", "decision", "claim") or ans.get("maturity_confidence", 0) < 0.5:
+            mat = None  # automatic classifier: maturity only means something for ideas
         if mat:
             conn.execute("UPDATE nodes SET maturity=? WHERE node_id=?", (mat, str(r["target_seq"])))
     for (target, label), (decision, final, _) in conf.items():
         if decision in ("accept", "edit") and final and final.startswith("maturity:"):
             conn.execute("UPDATE nodes SET maturity=? WHERE node_id=?", (final.split(":", 1)[1], str(target)))
+
+
+def apply_auto(conn):
+    """Automatic tags and stages from the classifier. Human tags and #stage always win."""
+    conn.execute("UPDATE entries SET auto_tags_json='[]'")
+    auto_stage = {}
+    for r in conn.execute("SELECT target_seq, auto_tags_json, stage FROM annotations WHERE method='auto'"
+                          " AND superseded_by IS NULL ORDER BY ts, id").fetchall():
+        conn.execute("UPDATE entries SET auto_tags_json=? WHERE seq=? AND tags_json='[]'",
+                     (r["auto_tags_json"] or "[]", r["target_seq"]))
+        if r["stage"]:
+            auto_stage[r["target_seq"]] = r["stage"]
+    current = None
+    for r in conn.execute("SELECT seq, event, actor, stage, stage_tag FROM entries ORDER BY seq").fetchall():
+        if r["stage_tag"]:
+            current = r["stage_tag"]
+        elif r["seq"] in auto_stage:
+            current = auto_stage[r["seq"]]
+        stage = current if r["actor"] != "system" and r["event"] != "Confirm" else None
+        if stage != r["stage"]:
+            conn.execute("UPDATE entries SET stage=? WHERE seq=?", (stage, r["seq"]))
+    conn.execute("UPDATE nodes SET stage=(SELECT stage FROM entries WHERE entries.seq=nodes.seq)")
+    for r in conn.execute("SELECT n.node_id, e.auto_tags_json FROM nodes n JOIN entries e ON e.seq=n.seq"
+                          " WHERE n.author='human' AND n.option IS NULL AND e.tags_json='[]'").fetchall():
+        conn.execute("UPDATE nodes SET ibis_type=? WHERE node_id=?",
+                     (rules.human_ibis(json.loads(r["auto_tags_json"] or "[]")), r["node_id"]))
 
 
 def update(store, conn=None, rebuild=False):
@@ -308,26 +351,36 @@ def store_status(conn, chain, review_count):
 # Queries used by the MCP server, viewer, skills and status line
 
 
-def lineage(conn, node_id, depth=10, confirmed_only=False):
-    """Ancestors of node_id through lineage edges. Returns {node_id: depth}."""
+def lineage(conn, node_id, depth=10, confirmed_only=False, curated=False):
+    """Ancestors of node_id through lineage edges. Returns {node_id: depth}.
+    confirmed_only: human-confirmed edges. curated: confirmed plus automatic
+    (classifier) edges, leaving out the rule that links every prompt to the
+    reply before it, and Jev suggestions still waiting for confirmation."""
+    where = "AND e.source = 'confirmed'" if confirmed_only else (
+        "AND e.source IN ('confirmed', 'auto')" if curated else "")
     q = ("WITH RECURSIVE anc(node, depth) AS (SELECT ?, 0 UNION"
          " SELECT e.dst, anc.depth + 1 FROM edges e JOIN anc ON e.src = anc.node"
          " WHERE e.type IN (%s) AND anc.depth < ? %s)"
          " SELECT node, MIN(depth) AS d FROM anc GROUP BY node") % (
-        ",".join("'%s'" % t for t in LINEAGE_TYPES), "AND e.source = 'confirmed'" if confirmed_only else "")
+        ",".join("'%s'" % t for t in LINEAGE_TYPES), where)
     return {r["node"]: r["d"] for r in conn.execute(q, (str(node_id), depth))}
 
 
-def review_queue(conn, low=0.50, high=0.80):
-    """Tier-1 suggestions in the review band that the human has not decided."""
+def review_queue(conn, low=0.50, high=0.80, include_auto=False):
+    """Machine suggestions the human has not decided. With include_auto, also the
+    automatic labels and links already counted, so the human can correct them."""
     conf = effective_confirmations(conn)
     out = []
+    states = "(0, %d)" % AUTO if include_auto else "(0)"
     for r in conn.execute("SELECT m.*, n.label FROM milestones m LEFT JOIN nodes n ON n.node_id = CAST(m.target_seq AS TEXT)"
-                          " WHERE m.tier >= 1 AND m.confirmed = 0 ORDER BY m.target_seq"):
+                          " WHERE m.tier >= 1 AND m.confirmed IN %s ORDER BY m.target_seq" % states):
         if r["score"] is None or r["score"] >= low:
             out.append({"kind": "milestone", "target_seq": r["target_seq"], "label": "milestone:%s" % r["type"],
-                        "score": r["score"], "annotation_id": r["annotation_id"], "text": r["label"]})
-    for r in conn.execute("SELECT e.src, e.dst, e.type FROM edges e WHERE e.source='annotation' ORDER BY e.src, e.dst"):
+                        "score": r["score"], "annotation_id": r["annotation_id"], "text": r["label"],
+                        "automatic": r["confirmed"] == AUTO})
+    sources = "('annotation', 'auto')" if include_auto else "('annotation')"
+    for r in conn.execute("SELECT e.src, e.dst, e.type, e.source FROM edges e WHERE e.source IN %s ORDER BY e.src, e.dst"
+                          % sources):
         label = "edge:%s:%s:%s" % (r["src"], r["type"], r["dst"])
         target = rules.node_seq(r["src"])
         if (target, label) in conf:
@@ -335,7 +388,7 @@ def review_queue(conn, low=0.50, high=0.80):
         ann = conn.execute("SELECT id FROM annotations WHERE target_seq=? AND superseded_by IS NULL ORDER BY ts DESC LIMIT 1",
                            (target,)).fetchone()
         out.append({"kind": "edge", "target_seq": target, "label": label, "score": None,
-                    "annotation_id": ann["id"] if ann else None})
+                    "annotation_id": ann["id"] if ann else None, "automatic": r["source"] == "auto"})
     return out
 
 

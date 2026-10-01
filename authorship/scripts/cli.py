@@ -3,10 +3,11 @@
 
     authorship init                 set up the current project
     authorship note TEXT...         add a note in your name (tags work: #idea, #discard ...)
-    authorship log [-n N] [--all]   recent entries
+    authorship log [-n N] [--all]   recent entries (#tag~ marks a tag the classifier set)
     authorship status               one line: chain, unsealed, to review
     authorship verify [--anchors]   check the chain (and the external anchors)
-    authorship review [--list]      confirm, reject or edit machine suggestions, one by one
+    authorship review [--list] [--all]   decide machine suggestions one by one (--all: also the
+                                         automatic labels already counted, to correct them)
     authorship seal                 anchor the current head now
     authorship open                 open the viewer in the browser
     authorship install [--bin-dir DIR]   put `authorship` on your PATH (~/.local/bin)
@@ -57,8 +58,8 @@ def _store(args, must_exist=True):
     return ledger.Store(project)
 
 
-def describe(e):
-    """One line per entry, for `log`."""
+def describe(e, auto_tags=None):
+    """One line per entry, for `log`. auto_tags: tags the classifier set, shown as #tag~."""
     ev, actor = e.get("event"), ACTORS.get(e.get("actor"), e.get("actor"))
     if ev in ("UserPromptSubmit", "ManualNote", "Stop", "SubagentStop"):
         kind = {"UserPromptSubmit": "prompt", "ManualNote": "note"}.get(ev, "reply")
@@ -80,6 +81,8 @@ def describe(e):
         kind = ev[0].lower() + ev[1:] if ev else "?"
         body = e.get("reason") or e.get("source") or ""
     body = " ".join(str(body).split())
+    if auto_tags:
+        body = " ".join(t + "~" for t in auto_tags) + "  " + body
     if len(body) > 100:
         body = body[:99] + "…"
     return "#%-5d %s  %-7s %-8s %s" % (e["seq"], e.get("ts", "")[5:16].replace("T", " "), actor, kind, body)
@@ -90,8 +93,20 @@ def cmd_log(store, args):
     show_all = "--all" in args
     noise = ("PostToolUse", "PostToolUseFailure", "SessionStart", "SessionEnd", "PreCompact", "Stop", "SubagentStop")
     rows = [e for _, _, e in ledger.read_entries(store) if e and (show_all or e.get("event") not in noise)]
+    auto = {}
+    try:
+        import index
+        import json as _json
+
+        conn = index.update(store)
+        auto = {r[0]: _json.loads(r[1]) for r in conn.execute("SELECT seq, auto_tags_json FROM entries WHERE auto_tags_json != '[]'")}
+        conn.close()
+    except Exception:
+        pass  # the log must work even when the index cannot be built
     for e in rows[-n:]:
-        print(describe(e))
+        print(describe(e, auto.get(e["seq"])))
+    if auto and rows:
+        print("(#tag~ = set automatically by the classifier)")
     if not rows:
         print("(no entries yet)")
     return 0
@@ -106,8 +121,18 @@ def status_line(store):
 def cmd_status(store, args):
     import annotator
 
-    annotator.run_once(store)  # refresh the cached chain status and review count
+    res = annotator.run_once(store)  # classify what is new, refresh the cached chain status and review count
     print(status_line(store))
+    why = {"on": "on", "off": "off (AUTHORSHIP_AUTO=0)", "no-backend": "not running: no Jev key and no `claude` command",
+           "error": "failed this time; see .authorship/errors.log (it retries on the next change)"}
+    import classifier
+
+    try:
+        backend = classifier.default_backend() if res["auto_state"] == "on" else None
+    except Exception:
+        backend = None
+    print("classifier: %s%s" % (why.get(res["auto_state"], res["auto_state"]),
+                                " (%s)" % backend.name if backend is not None else ""))
     return 0
 
 
@@ -199,7 +224,7 @@ def cmd_review(store, args, stdin=None, stdout=None):
 
     stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
     conn = index.update(store)
-    queue = index.review_queue(conn)
+    queue = index.review_queue(conn, include_auto="--all" in args)
     # unfavorable facts first, like every other report
     queue.sort(key=lambda i: (i["label"] != "milestone:ai_origin_element", i["target_seq"], i["label"]))
     if not queue:
@@ -208,7 +233,8 @@ def cmd_review(store, args, stdin=None, stdout=None):
     if "--list" in args:
         for item in queue:
             sc = _edge_score(conn, item)
-            stdout.write("#%-5s %-44s %s\n" % (item["target_seq"], explain(conn, item), "" if sc is None else "%.2f" % sc))
+            stdout.write("#%-5s %-44s %s%s\n" % (item["target_seq"], explain(conn, item), "" if sc is None else "%.2f" % sc,
+                                                 "  (automatic)" if item.get("automatic") else ""))
         return 0
     if stdin is sys.stdin and not sys.stdin.isatty():
         sys.stderr.write("authorship review asks you one question per item; run it in a terminal (or use --list)\n")
@@ -220,7 +246,8 @@ def cmd_review(store, args, stdin=None, stdout=None):
         if not target:
             continue
         sc = _edge_score(conn, item)
-        stdout.write("\n[%d/%d] %s%s\n" % (n, len(queue), explain(conn, item), "" if sc is None else "  (score %.2f)" % sc))
+        stdout.write("\n[%d/%d] %s%s%s\n" % (n, len(queue), explain(conn, item), "" if sc is None else "  (score %.2f)" % sc,
+                                            ", counted automatically" if item.get("automatic") else ""))
         stdout.write("   #%s: %s\n" % (item["target_seq"], _node_text(conn, item["target_seq"])))
         parsed = index.parse_edge_label(item["label"])
         if parsed:

@@ -129,7 +129,11 @@ class FakeProvider(object):
 
 
 def default_provider():
-    name = os.environ.get("AUTHORSHIP_JEV_PROVIDER", "typesafe")
+    """AUTHORSHIP_JEV_PROVIDER when set; otherwise whichever key is present (TypeSafe first)."""
+    name = os.environ.get("AUTHORSHIP_JEV_PROVIDER")
+    if not name:
+        name = "vercel_gateway" if (os.environ.get("AI_GATEWAY_API_KEY") and not os.environ.get("TYPESAFE_API_KEY")) \
+            else "typesafe"
     if name == "vercel_gateway":
         return VercelGatewayProvider()
     if name == "typesafe":

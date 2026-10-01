@@ -50,6 +50,16 @@ class Ctx(object):
     def has_confirmed(self):
         return self.conn.execute("SELECT COUNT(*) FROM edges WHERE source='confirmed'").fetchone()[0] > 0
 
+    def has_curated(self):
+        """True when the human or the automatic classifier has linked elements."""
+        return self.conn.execute("SELECT COUNT(*) FROM edges WHERE source IN ('confirmed', 'auto')").fetchone()[0] > 0
+
+    def lineage_mode(self):
+        if self.has_curated():
+            return {"curated": True}, ("human-confirmed and automatically classified edges"
+                                       if self.has_confirmed() else "automatically classified edges")
+        return {}, "rule-derived edges (nothing has been classified or confirmed yet)"
+
     def claims(self):
         return [r["node_id"] for r in self.conn.execute("SELECT node_id FROM nodes WHERE ibis_type='claim' ORDER BY seq")]
 
@@ -77,11 +87,11 @@ def _origin(ctx, nid, lineage_edges):
 def disclosure(store, claim=None, out=None):
     ctx = Ctx(store)
     claims = [str(claim)] if claim else ctx.claims()
-    confirmed_only = ctx.has_confirmed()
+    mode, mode_text = ctx.lineage_mode()
     L = ["# Invention disclosure: %s" % os.path.basename(store.project), "", HEADER, "",
          "Generated %s from the authorship ledger. Human text is quoted verbatim. Lineage uses %s." % (
              datetime.date.today().isoformat(),
-             "human-confirmed edges only" if confirmed_only else "rule-derived edges (no edges are confirmed yet)"), ""]
+             mode_text), ""]
 
     # 1. Problem
     L += ["## 1. Problem", ""]
@@ -103,7 +113,7 @@ def disclosure(store, claim=None, out=None):
     table = ["## 4. Elements", "", "| Element | Origin | Citations |", "|---|---|---|"]
     for c in claims:
         L += ["### Claim candidate %s" % ctx.cite(c), "", ctx.quote(c), ""]
-        lin = ctx.q.lineage(c, depth=20, confirmed_only=confirmed_only)
+        lin = ctx.q.lineage(c, depth=20, **mode)
         edges = lin["edges"]
         rests = [n["node"] for n in lin["items"] if n["author"] == "human" and n["node"] != c
                  and (ctx.node(n["node"]) or {"ibis_type": None})["ibis_type"] in ("position", "decision", "issue", "claim")]
@@ -154,7 +164,7 @@ def disclosure(store, claim=None, out=None):
     for m in ctx.conn.execute("SELECT * FROM milestones WHERE type != 'session_boundary' ORDER BY target_seq, type"):
         e = ctx.entries[m["target_seq"]]
         L.append("- %s %s: %s%s" % (e["ts"], ctx.cite(m["target_seq"]), m["type"].replace("_", " "),
-                                    "" if m["confirmed"] == 1 else " (not confirmed)"))
+                                    {1: "", 2: " (automatic)"}.get(m["confirmed"], " (not confirmed)")))
     L.append("")
 
     # 8. Chain
@@ -174,8 +184,8 @@ def contribution(store, claim, out=None):
     """Contribution analysis for one claim: unfavorable facts first."""
     ctx = Ctx(store)
     claim = str(claim)
-    confirmed_only = ctx.has_confirmed()
-    lin = ctx.q.lineage(claim, depth=20, confirmed_only=confirmed_only)
+    mode, _ = ctx.lineage_mode()
+    lin = ctx.q.lineage(claim, depth=20, **mode)
     ids = [n["node"] for n in lin["items"]]
     L = ["# Contribution analysis for claim %s" % ctx.cite(claim), "", HEADER, "", ctx.quote(claim), ""]
 
@@ -195,7 +205,7 @@ def contribution(store, claim, out=None):
     for m in ctx.milestones("ai_origin_element"):
         if m["confirmed"] != -1:
             unf.append("- %s is flagged as an AI-origin element (tier %d%s)." % (
-                ctx.cite(m["target_seq"]), m["tier"], ", confirmed" if m["confirmed"] == 1 else ", not confirmed"))
+                ctx.cite(m["target_seq"]), m["tier"], {1: ", confirmed", 2: ", automatic"}.get(m["confirmed"], ", not confirmed")))
     L += unf or ["None found in the recorded lineage."]
     L.append("")
 
@@ -208,8 +218,10 @@ def contribution(store, claim, out=None):
 
     L += ["## 3. Gaps where the evidence is thin", ""]
     gaps = []
-    if not confirmed_only:
-        gaps.append("- No lineage edge is human-confirmed yet; the lineage above is rule-derived.")
+    if not mode:
+        gaps.append("- No element is linked yet (by the classifier or by the human); the lineage above is rule-derived.")
+    elif not ctx.has_confirmed():
+        gaps.append("- The lineage above comes from the automatic classifier; no link is confirmed by the human.")
     rtp_targets = {m["target_seq"] for m in ctx.milestones("reduction_to_practice")}
     for n in hum:
         if n["seq"] not in rtp_targets and (ctx.node(n["node"]) or {"ibis_type": None})["ibis_type"] == "position":

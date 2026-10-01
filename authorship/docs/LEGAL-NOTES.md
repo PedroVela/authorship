@@ -17,12 +17,19 @@ The United States and Paraguay are first-to-file systems: priority comes from th
 `.authorship/` holds a detailed account of your invention. Public disclosure before filing can destroy novelty.
 
 - Keep the repository private. Do not push `.authorship/` or `authorship-exports/` to a public remote.
-- Tier 1 (Jev) sends entry text to a third-party service. It is off by default. Turn it on only after thinking about confidentiality, preferably with zero data retention (the Vercel AI Gateway provider asks for it) or under a confidentiality agreement.
+- The automatic classifier sends entry text to a model. By default that model is Claude, through your existing Claude Code login. The same text already goes to Anthropic during the session, so no new party receives it.
+- Setting a Jev key (`TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY`) switches the classifier to Jev, a third-party service, and from then on the text of your invention goes to it. Do that only after thinking about confidentiality, preferably with zero data retention (the Vercel AI Gateway provider asks for it) or under a confidentiality agreement. `AUTHORSHIP_AUTO=0` keeps everything local except the Claude Code session itself.
 - Anchoring sends only a hash of the ledger head to the timestamp authority, never ledger text.
 
 ## Confirmations matter
 
-Machine annotations are opinions and never enter the ledger. Labels that favor you (for example "conception candidate") need a score of 0.80 and your explicit confirmation in the viewer; labels against you surface at 0.50. Your confirmations are recorded as human entries in the ledger, hash-chained like everything else. Review them honestly: an attorney or an examiner may read them.
+Machine labels are opinions and never enter the ledger. They are applied automatically, so the record is complete without your effort, but leaning against you:
+
+- A label in your favor (for example "conception candidate") counts only from 0.80 confidence. Between 0.50 and 0.80 it waits for your decision in `authorship review`.
+- A label against you (an element that came from Claude) counts from 0.50.
+- Every draft and report says which labels are automatic and which you confirmed.
+
+An attorney will give more weight to labels you confirmed. Before relying on a draft, run `authorship review --all` and accept, reject or edit what matters. Your decisions are recorded as human entries in the ledger, hash-chained like everything else. Make them honestly: an attorney or an examiner may read them.
 
 ## Timestamps
 

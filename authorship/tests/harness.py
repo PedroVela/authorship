@@ -19,6 +19,8 @@ def hook_env(project, **extra):
         env.pop(k, None)
     env["AUTHORSHIP_PROJECT_DIR"] = project
     env["AUTHORSHIP_NO_DAEMONS"] = "1"
+    env["AUTHORSHIP_AUTO"] = "0"  # never call the real classifier from tests
+    env["AUTHORSHIP_HINT"] = "0"
     env["CLAUDE_PLUGIN_ROOT"] = PLUGIN
     env.update(extra)
     return env

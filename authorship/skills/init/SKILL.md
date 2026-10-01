@@ -14,7 +14,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py --project "${CLAUDE_PROJEC
 Then tell the user, in a few short lines:
 
 1. Recording is on now, in this session (no restart needed), and the viewer opens in the browser. Every prompt, tool call and response is hash-chained into `.authorship/ledger.jsonl`.
-2. Tags they can use in prompts: `#idea`, `#claim`, `#decision`, `#problem`, `#hypothesis`, `#discard`, `#stage <name>` (Spanish aliases `#problema`, `#hipotesis`, `#descarte`, `#etapa` also work).
+2. Nothing else to do: a background classifier labels each entry (problem, idea, decision, claim, stage) on its own; `authorship log` shows the labels. Tags such as `#idea` or `#claim` are optional and override it.
 3. Their own commands live in one CLI, run in their own terminal (never through Claude): install it once with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/cli.py install`, then `authorship note "..."`, `authorship log`, `authorship open`.
 4. The recommendation to enable the sandbox (`/sandbox`) and the optional status line snippet, both printed above.
 5. Keep the repository private: public disclosure before filing can destroy novelty.

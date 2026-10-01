@@ -2,7 +2,7 @@
 
 A Claude Code plugin that records how you and Claude co-develop an invention, as tamper-evident, timestamped evidence of what you conceived and what Claude proposed.
 
-Every prompt, tool call and response goes into a hash-chained ledger in your project. A guard keeps Claude from editing that ledger or writing entries in your name. A local viewer shows the reasoning as stages, IBIS swimlanes, claim genealogy and branches. Drafts for your attorney cite every element to a ledger entry.
+Every prompt, tool call and response goes into a hash-chained ledger in your project. A background classifier labels each entry (problem, idea, decision, claim, discard; what it builds on; the stage of the work), so nothing has to be tagged. A guard keeps Claude from editing that ledger or writing entries in your name. A local viewer shows the reasoning as stages, IBIS swimlanes, claim genealogy and branches. Drafts for your attorney cite every element to a ledger entry.
 
 This is the reference. New here? Start with the [project README](../README.md): what it is for, three steps to start, and fixes for common problems.
 
@@ -67,7 +67,9 @@ Recording only happens in projects that have `.authorship/`.
 
 ## Daily use
 
-### Tag your prompts
+### Tags (optional)
+
+The classifier labels entries on its own (see [Automatic classification](#automatic-classification)). A tag you type overrides it for that entry:
 
 | Tag | Meaning | Spanish alias |
 |---|---|---|
@@ -81,7 +83,7 @@ Recording only happens in projects that have `.authorship/`.
 
 Example: `#stage Prototype #decision long-poll the sequence endpoint every 2 s, not the webhook, because the bank does not sign webhooks`.
 
-Tags are normalized to English in `tags[]`; your text is stored exactly as typed (secrets redacted).
+Tags are normalized to English in `tags[]`; your text is stored exactly as typed (secrets redacted). Tags set by the classifier live in the index, not the ledger, and show as `#idea~` in `authorship log`.
 
 ### What Claude is told
 
@@ -94,8 +96,8 @@ Your side of the system is one command, `authorship`, installed once with `cli.p
 ```bash
 authorship note "#discard Bloom filter on transaction IDs: false positives lose payments"
 authorship log              # recent prompts, notes and confirmations; --all for every entry, -n N
-authorship status           # authorship ✓ 214 | 12 unsealed | 3 to review
-authorship review           # confirm, reject or edit machine suggestions, one question each
+authorship status           # authorship ✓ 214 | 12 unsealed | 3 to review, plus the classifier's state
+authorship review           # decide the labels the classifier was unsure of; --all to correct any automatic one
 authorship verify --anchors
 authorship seal             # anchor the current head now
 authorship open             # the viewer, with its session secret
@@ -118,12 +120,24 @@ The `inventorship-reviewer` subagent writes a contribution analysis for one clai
 
 The viewer starts in the background at session start, on `127.0.0.1` only, and opens your browser once. Tabs: Stages, Reasoning (IBIS swimlanes), Genealogy (a claim's lineage, with the count of human- and AI-originated ancestors), Replay (a slider over the ledger), Branches, and Review. Human nodes are circles and AI nodes rounded squares. The Review tab is the only place that writes, and only with the session secret.
 
-## Machine annotation
+## Automatic classification
 
-- **Tier 0**, always on, offline: tags become milestones; the first passing test run after a failing one, on files edited since an idea, becomes reduction-to-practice evidence for that idea; `AI proposal:` lines become AI-origin elements.
-- **Tier 1**, opt-in: [Jev](https://docs.typesafe.ai/) classifies stance, novelty and maturity. Enable with `AUTHORSHIP_JEV=1` plus `TYPESAFE_API_KEY` (or `AUTHORSHIP_JEV_PROVIDER=vercel_gateway` with `AI_GATEWAY_API_KEY`, zero data retention), then record consent with `annotator.py consent`. Labels that favor you need 0.80 and your confirmation; labels against you surface at 0.50.
+On by default, as soon as the project is initialized. Full description: [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md).
 
-Annotations are opinions: they live in `annotations.jsonl`, never in the ledger.
+- **What it does.** Each new prompt, note and reply is classified in the background by the annotator. It finds the kind (problem, idea, hypothesis, decision, claim, discard, instruction), a new technical element, the stance toward an earlier element, its parents, maturity, and a change of stage. The answers become tags, stages, milestones and lineage edges.
+- **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. Jev takes over when `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY` is set: faster, with measured probabilities, but a new party receives the text.
+- **Thresholds.** A label in your favor counts automatically from 0.80 and waits in `authorship review` between 0.50 and 0.80. A label against you (an AI-origin element) counts from 0.50.
+- **Where it goes.** Answers go to `annotations.jsonl`, with the backend, the model id, a prompt hash and every confidence. They never go to the ledger.
+- **Corrections.** A typed tag wins over the classifier. `authorship review --all` rejects or edits any automatic label, as a human `Confirm` entry.
+
+Deterministic rules run alongside it, offline:
+
+- reduction-to-practice evidence: the first passing test after a failing one, on files edited since an idea;
+- `AI proposal:` lines in replies become AI-origin elements;
+- numbered alternatives become one AI option each;
+- session boundaries.
+
+The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remains for calibration. Its labels always wait for confirmation, and it needs a consent typed with `annotator.py consent`.
 
 ## Configuration
 
@@ -133,8 +147,12 @@ Annotations are opinions: they live in `annotations.jsonl`, never in the ledger.
 | `AUTHORSHIP_ANCHOR` | unset | `1`: anchor at every session end |
 | `AUTHORSHIP_TSA` | `https://freetsa.org/tsr` | RFC 3161 authority; `off` to disable |
 | `AUTHORSHIP_OTS` | `1` | `0`: skip OpenTimestamps |
-| `AUTHORSHIP_JEV` | unset | `1`: enable Tier 1 |
-| `AUTHORSHIP_JEV_PROVIDER` | `typesafe` | or `vercel_gateway` |
+| `AUTHORSHIP_AUTO` | `1` | `0`: no automatic classification (tags and rules still work) |
+| `AUTHORSHIP_AUTO_BACKEND` | chosen | `claude` or `jev`; by default Jev when a Jev key is set, else Claude |
+| `AUTHORSHIP_AUTO_MODEL` | `claude-sonnet-5` | Model for the Claude backend |
+| `TYPESAFE_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Jev key; setting one switches the classifier to Jev |
+| `AUTHORSHIP_JEV_PROVIDER` | by key | `typesafe` or `vercel_gateway` |
+| `AUTHORSHIP_JEV` | unset | `1`: also run the spec's Tier 1 questions (calibration) |
 | `AUTHORSHIP_VIEWER_PORT` | `47291` | First port tried |
 | `AUTHORSHIP_VIEWER_OPEN` | `1` | `0`: do not open the browser |
 | `AUTHORSHIP_NO_DAEMONS` | unset | `1`: do not start the annotator and viewer |

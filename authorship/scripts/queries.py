@@ -69,7 +69,8 @@ class Q(object):
 
     def _preview(self, r):
         return {"seq": r["seq"], "hash": r["hash"][:HASH_CHARS], "ts": r["ts"], "event": r["event"], "actor": r["actor"],
-                "tags": json.loads(r["tags_json"] or "[]"), "stage": r["stage"], "file": r["file"],
+                "tags": json.loads(r["tags_json"] or "[]"), "auto_tags": json.loads(r["auto_tags_json"] or "[]"),
+                "stage": r["stage"], "file": r["file"],
                 "preview": rules.short(r["text"], 240)}
 
     # tools -----------------------------------------------------------------
@@ -91,8 +92,8 @@ class Q(object):
         for t in tags or []:
             t = "#" + t.lstrip("#").lower()
             t = "#" + ledger.TAG_ALIASES.get(t[1:], t[1:])
-            where.append("e.tags_json LIKE ?")
-            params.append('%%"%s"%%' % t)
+            where.append("(e.tags_json LIKE ? OR e.auto_tags_json LIKE ?)")
+            params += ['%%"%s"%%' % t] * 2
         if actor:
             where.append("e.actor = ?")
             params.append(actor)
@@ -128,14 +129,15 @@ class Q(object):
         return cap({"seq": seq, "hash": r["hash"][:HASH_CHARS], "node": self._node(node_id), "entry": full,
                     "sub_nodes": subs, "annotations": anns, "confirmations": confirmed, "items": edges}, key="items")
 
-    def lineage(self, seq, depth=10, confirmed_only=False):
-        anc = index.lineage(self.conn, str(seq), int(depth), bool(confirmed_only))
+    def lineage(self, seq, depth=10, confirmed_only=False, curated=False):
+        anc = index.lineage(self.conn, str(seq), int(depth), bool(confirmed_only), bool(curated))
         nodes = [self._node(n, d) for n, d in sorted(anc.items(), key=lambda kv: (kv[1], rules.node_seq(kv[0]), kv[0]))]
         nodes = [n for n in nodes if n]
         ids = set(anc)
         edges = []
         for e in self.conn.execute("SELECT * FROM edges ORDER BY src, dst, type"):
-            if e["src"] in ids and e["dst"] in ids and (not confirmed_only or e["source"] == "confirmed"):
+            if e["src"] in ids and e["dst"] in ids and (not confirmed_only or e["source"] == "confirmed") \
+                    and (not curated or e["source"] in ("confirmed", "auto")):
                 edges.append({"src": e["src"], "dst": e["dst"], "type": e["type"], "source": e["source"],
                               "seq": rules.node_seq(e["src"]), "hash": self._hash(rules.node_seq(e["src"]))})
         ai = []
@@ -153,7 +155,8 @@ class Q(object):
     def open_ideas(self):
         rows = self.conn.execute(
             "SELECT n.node_id FROM nodes n JOIN entries e ON e.seq = n.seq WHERE n.author='human' AND n.status='open'"
-            " AND n.option IS NULL AND (e.tags_json LIKE '%\"#idea\"%' OR e.tags_json LIKE '%\"#hypothesis\"%')"
+            " AND n.option IS NULL AND (e.tags_json LIKE '%\"#idea\"%' OR e.tags_json LIKE '%\"#hypothesis\"%'"
+            " OR e.auto_tags_json LIKE '%\"#idea\"%' OR e.auto_tags_json LIKE '%\"#hypothesis\"%')"
             " ORDER BY n.seq").fetchall()
         return cap({"items": [self._node(r["node_id"]) for r in rows]})
 
@@ -175,7 +178,7 @@ class Q(object):
     def milestones(self, since_seq=None):
         rows = self.conn.execute(
             "SELECT * FROM milestones WHERE target_seq > ? ORDER BY target_seq, tier, type", (int(since_seq or 0),)).fetchall()
-        state = {1: "confirmed", 0: "pending", -1: "rejected"}
+        state = {1: "confirmed", 2: "automatic", 0: "pending", -1: "rejected"}
         items = [{"seq": r["target_seq"], "hash": self._hash(r["target_seq"]), "type": r["type"], "tier": r["tier"],
                   "score": r["score"], "confirmation": state.get(r["confirmed"], "pending"),
                   "evidence_seq": r["evidence_seq"],
