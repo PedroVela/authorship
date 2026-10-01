@@ -43,6 +43,8 @@ Four tiles first:
 - **Elements from you**: how many of the elements behind your claims came from you.
 - **Waiting for you**: how many labels need an answer.
 
+Under the tiles, a strip says **who labels the entries** and where the text goes: "Labeled automatically by Claude (claude-sonnet-5), through your Claude Code login. No new party receives your text." With Jev, the strip turns amber and names the provider that receives the text. **How to change it** opens the setup steps: Claude by default, Jev with a key, or off. The same strip appears on Review.
+
 Then one card per claim:
 
 - the claim, quoted from the ledger;

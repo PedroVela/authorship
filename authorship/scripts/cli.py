@@ -10,6 +10,9 @@
                                          automatic labels already counted, to correct them)
     authorship seal                 anchor the current head now
     authorship open                 open the viewer in the browser
+    authorship classifier [--test]  who labels the entries, where the text goes, how to change it
+                                    (--test sends one made-up sentence to check the setup)
+    authorship restart              restart the annotator and viewer with this terminal's settings
     authorship install [--bin-dir DIR]   put `authorship` on your PATH (~/.local/bin)
 
 The project is found like git finds a repository: the nearest directory, from
@@ -23,7 +26,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ledger  # noqa: E402
 
-HUMAN_ONLY = ("note", "seal", "open", "review")
+HUMAN_ONLY = ("note", "seal", "open", "review", "restart")
 ACTORS = {"human": "you", "ai": "claude", "system": "system"}
 
 
@@ -287,6 +290,101 @@ def cmd_review(store, args, stdin=None, stdout=None):
     return 0
 
 
+SETUP = """How to choose the classifier
+  Claude (default)  nothing to set up: it uses the `claude` command and your login.
+                    Model: export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001  (default claude-sonnet-5)
+  Jev               1. Get a key: https://docs.typesafe.ai (TypeSafe), or a Vercel AI Gateway key.
+                    2. Add it to your shell profile (~/.zshrc or ~/.bashrc), so every session has it:
+                         export TYPESAFE_API_KEY=...      (or: export AI_GATEWAY_API_KEY=...)
+                    3. Open a new terminal, then: authorship restart
+                    The text of your entries then goes to that provider: decide that before filing.
+  Force one         export AUTHORSHIP_AUTO_BACKEND=claude   (or jev)
+  Turn it off       export AUTHORSHIP_AUTO=0   (tags you type and the rules keep working)
+After any change: authorship restart  (the annotator keeps the settings it started with)."""
+
+
+def cmd_classifier(store, args, stdout=None):
+    import autoclass  # noqa: F401  (imported for its side effects on sys.path users)
+    import classifier
+    import index
+
+    stdout = stdout or sys.stdout
+    conn = index.update(store)
+    running = index._meta(conn, "classifier") or {}
+    labeled = conn.execute("SELECT COUNT(*) FROM annotations WHERE method='auto'").fetchone()[0]
+    conn.close()
+    if os.environ.get("AUTHORSHIP_AUTO", "1") == "0":
+        here, here_err = None, "off (AUTHORSHIP_AUTO=0)"
+    else:
+        try:
+            here, here_err = classifier.default_backend(), None
+        except Exception as exc:
+            here, here_err = None, str(exc)
+        if here is None and here_err is None:
+            here_err = "no backend: no Jev key and no `claude` command on the PATH"
+    info = classifier.describe_backend(here)
+
+    def line(d):
+        if not d.get("backend"):
+            return None
+        return "%s%s; entry text goes to %s" % (d.get("label"), " (%s)" % d["model"] if d.get("model") else "", d.get("sends_to"))
+
+    stdout.write("Running annotator: %s\n" % (
+        line(running) or {"off": "off (AUTHORSHIP_AUTO=0)", "no-backend": "not classifying: no backend",
+                          "error": "failed last time: %s" % running.get("error")}.get(running.get("state"), "not seen yet")))
+    if running.get("state") == "error" and running.get("backend"):
+        stdout.write("  last run failed: %s\n" % running.get("error"))
+    stdout.write("This terminal would use: %s\n" % (line(info) or here_err))
+    if running.get("backend") and info.get("backend") and running.get("backend") != info.get("backend"):
+        stdout.write("  They differ: run `authorship restart` to switch the annotator to this terminal's settings.\n")
+    stdout.write("Entries labeled automatically so far: %d\n\n" % labeled)
+    if "--test" in args:
+        ledger.require_human("authorship classifier --test")
+        if here is None:
+            stdout.write("Nothing to test: %s\n" % here_err)
+            return 1
+        import time
+        sample = {"current_stage": "", "context": [], "candidates": [],
+                  "entries": [{"seq": 1, "who": "human", "event": "UserPromptSubmit",
+                               "text": "Example only: detect new payments by comparing a monotonic statement counter."}]}
+        t0 = time.time()
+        try:
+            answers, model, _ = here.classify(sample)
+        except Exception as exc:
+            stdout.write("Test failed: %s\n" % exc)
+            return 1
+        a = answers[0] if answers else {}
+        stdout.write("Test OK in %.1f s with %s: the sample reads as '%s' (%s sure).\n\n" % (
+            time.time() - t0, model, a.get("kind"), "%d%%" % round(100 * float(a.get("kind_confidence") or 0))))
+    stdout.write(SETUP + "\n")
+    return 0
+
+
+def cmd_restart(store, args):
+    import signal
+    import time
+
+    for name in ("annotator", "viewer"):
+        pidfile = os.path.join(store.run, name + ".pid")
+        try:
+            with open(pidfile) as f:
+                os.kill(int(f.read().strip()), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+        try:
+            os.remove(pidfile)
+        except OSError:
+            pass
+    time.sleep(0.5)
+    env_off = os.environ.pop("AUTHORSHIP_NO_DAEMONS", None)
+    ledger.ensure_daemons(store)
+    if env_off is not None:
+        os.environ["AUTHORSHIP_NO_DAEMONS"] = env_off
+    print("Restarted the annotator and the viewer with this terminal's settings.")
+    print("The viewer opens in your browser (or run `authorship open`). Check with `authorship classifier`.")
+    return 0
+
+
 def cmd_init(args):
     import init_project
 
@@ -323,7 +421,7 @@ def cmd_install(args):
 
 
 COMMANDS = {"log": cmd_log, "status": cmd_status, "verify": cmd_verify, "note": cmd_note, "seal": cmd_seal,
-            "open": cmd_open, "review": cmd_review}
+            "open": cmd_open, "review": cmd_review, "classifier": cmd_classifier, "restart": cmd_restart}
 
 
 def main(argv):

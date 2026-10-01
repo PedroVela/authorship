@@ -58,6 +58,48 @@ The provider is TypeSafe when `TYPESAFE_API_KEY` is set, otherwise the Vercel AI
 
 Setting the key is the decision to send entry text to that provider; there is no extra prompt. See [LEGAL-NOTES](LEGAL-NOTES.md#keep-it-private).
 
+## Setting it up
+
+Settings are environment variables. The annotator reads them when it starts, and it keeps running across sessions, so **after any change run `authorship restart`**. Run every command below in your own terminal, not inside Claude Code.
+
+**See what is in use:**
+
+```bash
+authorship classifier          # the backend the annotator uses, where the text goes, how to change it
+authorship classifier --test   # also sends one made-up sentence and shows the answer (checks your key)
+```
+
+The viewer shows the same, in a strip under the tiles on Overview and on Review. Its **How to change it** link opens these steps.
+
+**Claude (default).** Nothing to set up; it needs the `claude` command on the PATH. To pick another model:
+
+```bash
+export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001   # default: claude-sonnet-5
+authorship restart
+```
+
+**Jev.**
+
+1. Get a key from [TypeSafe AI](https://docs.typesafe.ai), or a Vercel AI Gateway key, which requests zero data retention.
+2. Add it to your shell profile (`~/.zshrc` or `~/.bashrc`), so every Claude Code session has it:
+
+   ```bash
+   export TYPESAFE_API_KEY=your-key      # or: export AI_GATEWAY_API_KEY=your-key
+   ```
+
+3. Open a new terminal and run `authorship restart`.
+4. Check it with `authorship classifier --test`.
+
+With Jev, the text of your entries goes to that provider. Decide that with your attorney before filing.
+
+**Other switches:**
+
+```bash
+export AUTHORSHIP_AUTO_BACKEND=claude   # or jev: force one even when a Jev key is set
+export AUTHORSHIP_AUTO=0                # no automatic labels; typed tags and the rules keep working
+authorship restart                      # after any of these
+```
+
 ## From answers to labels
 
 Thresholds are asymmetric, so the record never errs in your favor:
@@ -109,7 +151,7 @@ These run offline, always, whatever the backend:
 
 ## When it does not run
 
-`authorship status` prints a `classifier:` line that says why:
+`authorship classifier` (and the strip in the viewer) says why:
 
 - `off`: `AUTHORSHIP_AUTO=0`.
 - `no-backend`: no Jev key and no `claude` command on the PATH.

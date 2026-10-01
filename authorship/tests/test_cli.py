@@ -152,3 +152,24 @@ def test_review_empty_queue(qr):
 def test_review_refuses_claude(qr):
     r = run_cli(["review", "--list"], cwd=qr.project, CLAUDECODE="1")
     assert r.returncode == 3 and "human-only" in r.stderr
+
+
+def test_classifier_command_explains_setup(qr, monkeypatch):
+    import io
+    monkeypatch.setenv("AUTHORSHIP_AUTO", "1")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    out = io.StringIO()
+    assert cli.cmd_classifier(qr, [], stdout=out) == 0
+    text = out.getvalue()
+    assert "This terminal would use: Jev (jev-1.13.0); entry text goes to TypeSafe AI" in text
+    assert "export TYPESAFE_API_KEY" in text and "authorship restart" in text and "AUTHORSHIP_AUTO=0" in text
+    monkeypatch.setenv("AUTHORSHIP_AUTO", "0")
+    out = io.StringIO()
+    cli.cmd_classifier(qr, [], stdout=out)
+    assert "This terminal would use: off (AUTHORSHIP_AUTO=0)" in out.getvalue()
+
+
+@pytest.mark.parametrize("cmd", [["restart"], ["classifier", "--test"]])
+def test_restart_and_test_refuse_claude(qr, cmd):
+    r = run_cli(cmd, cwd=qr.project, CLAUDECODE="1")
+    assert r.returncode == 3 and "human-only" in r.stderr

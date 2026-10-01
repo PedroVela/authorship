@@ -486,11 +486,16 @@ def run_once(store, provider=None, cfg=None, blob_cache=None, classifier=None):
     if classifier is not None or auto_enabled():
         import autoclass
 
+        autoclass.run.last_backend = None
         try:
             out["auto"], out["auto_state"] = autoclass.run(store, entries, read_annotations(store), classifier)
         except Exception as exc:
             store.log_error("annotator.auto", exc)
             out["auto_state"] = "error"
+            out["auto_error"] = str(exc)[:200]
+        import classifier as clf
+
+        out["classifier"] = clf.describe_backend(autoclass.run.last_backend)
     anns = read_annotations(store)
     out["tier0"] = run_tier0(store, entries, anns)
     if jev_enabled() or provider is not None:
@@ -504,7 +509,8 @@ def run_once(store, provider=None, cfg=None, blob_cache=None, classifier=None):
             out["tier1"] = run_tier1(store, entries, read_annotations(store), provider=provider, cfg=cfg)
             out["tier1_state"] = "on"
     conn = index.update(store)
-    index.store_status(conn, ledger.verify(store, blob_cache=blob_cache), len(index.review_queue(conn)))
+    info = dict(out.get("classifier") or {}, state=out["auto_state"], error=out.get("auto_error"), checked=ledger.now_iso())
+    index.store_status(conn, ledger.verify(store, blob_cache=blob_cache), len(index.review_queue(conn)), classifier=info)
     conn.close()
     return out
 

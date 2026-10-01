@@ -340,9 +340,12 @@ def update(store, conn=None, rebuild=False):
     return conn
 
 
-def store_status(conn, chain, review_count):
-    """Cache chain status and queue size for the status line (which reads only head.json and this)."""
+def store_status(conn, chain, review_count, classifier=None):
+    """Cache chain status and queue size for the status line (which reads only head.json and this), and
+    the classifier the annotator last used, for the viewer."""
     with conn:
+        if classifier is not None:
+            _set_meta(conn, "classifier", classifier)
         _set_meta(conn, "chain", {k: chain.get(k) for k in ("ok", "entries", "head", "broken_at", "sealed_upto", "unsealed")})
         _set_meta(conn, "review_count", review_count)
 

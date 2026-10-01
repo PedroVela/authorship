@@ -100,13 +100,17 @@ def build_graph(store):
     review = [explain_item(conn, i) for i in index.review_queue(conn)]
     review_all = [explain_item(conn, i) for i in index.review_queue(conn, include_auto=True)]
     invent = inventions(q, conn, claims)
+    cls = index._meta(conn, "classifier") or {"state": "unknown"}
+    last = conn.execute("SELECT model FROM annotations WHERE method='auto' ORDER BY ts DESC LIMIT 1").fetchone()
+    cls["last_model"] = last["model"] if last else None
+    cls["labeled"] = conn.execute("SELECT COUNT(*) FROM annotations WHERE method='auto'").fetchone()[0]
     conn.close()
     return {
         "etag": _etag(store),
         "project": os.path.basename(store.project),
         "chain": {k: chain[k] for k in ("ok", "entries", "head", "broken_at", "reason", "sealed_upto", "unsealed")},
         "stages": stages, "entries": entries, "nodes": nodes, "edges": edges, "claims": claims, "review": review,
-        "review_all": review_all, "inventions": invent,
+        "review_all": review_all, "inventions": invent, "classifier": cls,
         "limits": {"stages_only_above": STAGES_ONLY_ABOVE},
     }
 

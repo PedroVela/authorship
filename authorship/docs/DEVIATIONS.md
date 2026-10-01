@@ -86,6 +86,8 @@ The spec makes Tier 0 depend on tags the human types, and keeps Tier 1 (Jev) opt
 33. **Conception follows the spec's rule,** whatever the model calls the entry. That rule is a new element plus a stance of originates, modifies or rejects. Reduction-to-practice evidence also anchors on ideas the classifier found.
 34. **`authorship review --all`** lists automatic labels and links too, so the human can reject or edit any of them. `authorship status` prints the classifier's state.
 
+35. **The classifier in use is visible.** The annotator records the backend it used in the index, with the model, where the text goes and the last error. The viewer shows it on Overview and Review, with a setup dialog. `authorship classifier` prints it and the setup steps (`--test` checks a key with one made-up sentence). `authorship restart` restarts the annotator and viewer with the terminal's settings, because the annotator outlives sessions and keeps the environment it started with. `restart` and `classifier --test` are human-only: a restart chooses where entry text is sent.
+
 ## Process
 
 27. Phases 4 (viewer) and 5 (skills, anchoring, status line) were built in parallel, each against its own acceptance tests, and the full suite was run before each commit.

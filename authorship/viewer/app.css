@@ -245,6 +245,20 @@ pre.diff .del { color: var(--critical); }
 .auto-list summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .done-row { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hair); font-size: 14px; flex-wrap: wrap; }
 
+/* Classifier strip and setup dialog */
+.cls-strip { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--ring);
+  border-left: 4px solid var(--you); border-radius: var(--radius); padding: 10px 14px; margin: 0 0 20px; font-size: 14px; color: var(--ink-2); }
+.cls-strip.third { border-left-color: var(--warning); }
+.cls-strip.off { border-left-color: var(--muted); }
+.cls-strip.err { border-left-color: var(--critical); }
+.cls-strip strong { color: var(--ink); }
+.steps { padding-left: 20px; margin: 6px 0; }
+.steps li { margin: 6px 0; }
+pre.cmd { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 8px 10px; border-radius: 6px; margin: 6px 0; white-space: pre-wrap; }
+.warn-note { background: var(--warning-bg); border-radius: 8px; padding: 8px 10px; }
+ul.plain { padding-left: 18px; margin: 4px 0; }
+#setup { max-width: 620px; }
+
 /* Help dialog */
 dialog { border: 1px solid var(--ring); border-radius: 14px; padding: 20px 24px; max-width: 560px; width: calc(100% - 32px); background: var(--surface); color: var(--ink); }
 dialog::backdrop { background: rgba(0, 0, 0, 0.35); }

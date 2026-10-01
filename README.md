@@ -88,6 +88,16 @@ By default the classifier is Claude itself, run in the background through the `c
 
 If you set a [Jev](https://docs.typesafe.ai/) key (`TYPESAFE_API_KEY`, or `AI_GATEWAY_API_KEY` for the Vercel AI Gateway), Jev is used instead. It is faster and cheaper, and returns measured probabilities. But it sends the text of your invention to a new party, so set the key only if that is acceptable before filing.
 
+To switch to Jev:
+
+```bash
+echo 'export TYPESAFE_API_KEY=your-key' >> ~/.zshrc   # or AI_GATEWAY_API_KEY; then open a new terminal
+authorship restart                                    # the annotator picks up the new settings
+authorship classifier --test                          # confirms which backend answers
+```
+
+`authorship classifier` shows what is in use at any time, and so does the viewer, in a strip on Overview and Review with a **How to change it** link.
+
 The record leans against you, never for you:
 - A label in your favor counts only from 0.80 confidence.
 - A label against you (an idea that came from Claude) counts from 0.50.
@@ -105,7 +115,7 @@ Details: [docs/CLASSIFICATION.md](authorship/docs/CLASSIFICATION.md).
 | `authorship: no .authorship/ here` | You are outside a recorded project; `cd` into it, or run `/authorship:init`. |
 | `authorship verify` says `BROKEN at #N` | Entry N was changed after it was written. Do not "fix" the ledger; tell your attorney. Git history shows when it changed. |
 | Claude says `authorship guard: blocked` on normal work | The guard is too strict for that command: run it yourself, and report it as a bug. |
-| `classifier:` says it is not running | `authorship status` gives the reason. Usually the `claude` command is not on the PATH of the session, or `AUTHORSHIP_AUTO=0` is set. Unclassified entries are picked up later. |
+| The classifier is not running, or uses the wrong backend | `authorship classifier` says why and what this terminal would use. Usually the `claude` command is not on the PATH, `AUTHORSHIP_AUTO=0` is set, or a key was added after the annotator started: run `authorship restart`. Unclassified entries are picked up later. |
 | The classifier read an entry wrong | Type the right tag next time, or run `authorship review --all` and reject or edit the label. |
 | Anything else | Hook errors are logged in `.authorship/errors.log`; they never interrupt your session. |
 

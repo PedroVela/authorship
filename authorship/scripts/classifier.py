@@ -278,6 +278,23 @@ def default_backend():
     return None
 
 
+def describe_backend(b):
+    """What the viewer and `authorship classifier` say about the backend in use."""
+    if b is None:
+        return {"backend": None}
+    if getattr(b, "name", "") == "jev":
+        p = b.provider
+        gateway = p.name == "vercel_gateway"
+        return {"backend": "jev", "label": "Jev", "model": b.model, "provider": p.name, "endpoint": p.endpoint,
+                "sends_to": "the Vercel AI Gateway (zero data retention requested)" if gateway else "TypeSafe AI (api.typesafe.ai)",
+                "third_party": True}
+    if getattr(b, "name", "") == "claude-cli":
+        return {"backend": "claude-cli", "label": "Claude", "model": b.model, "provider": "anthropic", "endpoint": "claude -p",
+                "sends_to": "Anthropic, through your Claude Code login (it already receives the session)", "third_party": False}
+    return {"backend": getattr(b, "name", "custom"), "label": getattr(b, "name", "custom"), "model": getattr(b, "model", None),
+            "third_party": None}
+
+
 class FakeClassifier(object):
     """For tests: answers(payload) -> list of entry objects."""
 

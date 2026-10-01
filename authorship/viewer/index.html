@@ -47,6 +47,7 @@
       <p class="lede">Each claim, the elements it rests on, and who contributed each one. Everything cites the ledger entry it comes from, as <code>#seq</code>.</p>
     </div>
     <div class="kpis" id="kpis"></div>
+    <div class="cls-strip" id="cls-overview" role="note"></div>
     <div id="inventions"></div>
     <div id="against"></div>
     <div id="stages-summary"></div>
@@ -99,6 +100,7 @@
       <h1>Check the labels</h1>
       <p class="lede">The classifier labels every entry on its own. Labels in your favor that it was unsure of wait here for you; your answer is recorded in the ledger, in your name. You can also correct any label it already counted.</p>
     </div>
+    <div class="cls-strip" id="cls-review" role="note"></div>
     <p class="hint" id="review-locked" hidden>Answers are disabled on this page. Open it from your terminal with <code>authorship open</code>, or answer with <code>authorship review</code>.</p>
     <h2 class="section">Waiting for you <span class="muted" id="review-n"></span></h2>
     <div id="review-pending"></div>
@@ -111,6 +113,34 @@
   </section>
 </main>
 
+<dialog id="setup" aria-labelledby="setup-title">
+  <form method="dialog">
+    <h2 id="setup-title">Choose who labels the entries</h2>
+    <p class="muted">Settings are environment variables, read when the annotator starts. Type the commands in your own terminal, not in Claude Code.</p>
+    <h3>Claude (default)</h3>
+    <p>Nothing to set up: it uses the <code>claude</code> command and your existing login. The text goes to Anthropic, which already receives your session.</p>
+    <p>Another model: <code>export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001</code> (default <code>claude-sonnet-5</code>).</p>
+    <h3>Jev</h3>
+    <ol class="steps">
+      <li>Get a key from <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">TypeSafe AI</a>, or a Vercel AI Gateway key (zero data retention).</li>
+      <li>Add it to your shell profile (<code>~/.zshrc</code> or <code>~/.bashrc</code>), so every session has it:
+        <pre class="cmd">export TYPESAFE_API_KEY=your-key
+# or, through Vercel:
+export AI_GATEWAY_API_KEY=your-key</pre></li>
+      <li>Open a new terminal and run <code>authorship restart</code>.</li>
+      <li>Check it: <code>authorship classifier --test</code> sends one made-up sentence and shows the answer.</li>
+    </ol>
+    <p class="warn-note">With Jev, the text of your entries goes to that provider. Public disclosure before filing can destroy novelty: decide this with your attorney.</p>
+    <h3>Other settings</h3>
+    <ul class="plain">
+      <li>Force one: <code>export AUTHORSHIP_AUTO_BACKEND=claude</code> (or <code>jev</code>)</li>
+      <li>Turn it off: <code>export AUTHORSHIP_AUTO=0</code>. Tags you type and the deterministic rules keep working.</li>
+      <li>After any change: <code>authorship restart</code>. The annotator keeps the settings it started with.</li>
+    </ul>
+    <div class="dialog-actions"><button class="btn primary" value="close">Close</button></div>
+  </form>
+</dialog>
+
 <dialog id="help" aria-labelledby="help-title">
   <form method="dialog">
     <h2 id="help-title">How to read this</h2>
@@ -120,6 +150,8 @@
       <dt>Map</dt><dd>The same entries as a picture: problems on top, ideas in the middle, decisions and claims below, Claude's code and tests at the bottom. Time runs left to right. Drag the slider to replay how it grew.</dd>
       <dt>Review</dt><dd>Labels the classifier was not sure of, for you to accept, reject or change. Only your answers are evidence; the classifier's labels are opinions.</dd>
     </dl>
+    <h3>Who labels the entries</h3>
+    <p class="muted">A classifier reads every entry in the background and labels it (problem, idea, decision, claim, stage). By default it is Claude, through your own login, so no new party receives your text. If you set a Jev key it is Jev, and your entry text goes to that provider. The strip under the tiles says which one is in use; "How to change it" shows the steps.</p>
     <h3>Symbols</h3>
     <ul class="help-symbols">
       <li><i class="sym you" aria-hidden="true"></i> Circle: written by you</li>

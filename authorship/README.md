@@ -101,9 +101,11 @@ authorship review           # decide the labels the classifier was unsure of; --
 authorship verify --anchors
 authorship seal             # anchor the current head now
 authorship open             # the viewer, with its session secret
+authorship classifier       # who labels the entries, where the text goes, how to change it (--test checks it)
+authorship restart          # restart the annotator and viewer, to pick up changed settings
 ```
 
-`note`, `review`, `seal` and `open` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
+`note`, `review`, `seal`, `open`, `restart` and `classifier --test` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 
@@ -134,6 +136,7 @@ On by default, as soon as the project is initialized. Full description: [docs/CL
 - **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. Jev takes over when `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY` is set: faster, with measured probabilities, but a new party receives the text.
 - **Thresholds.** A label in your favor counts automatically from 0.80 and waits in `authorship review` between 0.50 and 0.80. A label against you (an AI-origin element) counts from 0.50.
 - **Where it goes.** Answers go to `annotations.jsonl`, with the backend, the model id, a prompt hash and every confidence. They never go to the ledger.
+- **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: set `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY` in your shell profile for Jev, then run `authorship restart`. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
 - **Corrections.** A typed tag wins over the classifier. `authorship review --all` rejects or edits any automatic label, as a human `Confirm` entry.
 
 Deterministic rules run alongside it, offline:

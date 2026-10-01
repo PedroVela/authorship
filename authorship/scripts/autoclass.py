@@ -135,6 +135,7 @@ def run(store, entries, anns, classifier=None, limit=60):
         classifier = clf.default_backend()
         if classifier is None:
             return 0, "no-backend"
+    run.last_backend = classifier
     done = annotator.latest_by_target(anns, method="auto")
     pending = [e for e in entries if eligible(e) and e["seq"] not in done][:limit]
     if not pending:

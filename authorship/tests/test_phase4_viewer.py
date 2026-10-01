@@ -575,3 +575,40 @@ def test_browser_5000_nodes_budgets_and_5001_fallback(browser, project):
         ctx.close()
     finally:
         s.close()
+
+
+def test_browser_says_who_labels_and_how_to_change_it(browser, served):
+    import classifier
+    import index
+    conn = index.update(served.store)
+    info = dict(classifier.describe_backend(classifier.JevBackend(provider=jev_client_fake())), state="on")
+    index.store_status(conn, ledger.verify(served.store), 0, classifier=info)
+    conn.close()
+    ctx, page, problems = open_page(browser, served)
+    wait_js(page, "() => /Jev/.test(document.getElementById('cls-overview').textContent)")
+    strip = page.inner_text("#cls-overview")
+    assert "Labeled automatically by Jev" in strip and "TypeSafe AI" in strip
+    assert "third" in page.get_attribute("#cls-overview", "class")
+    page.click("#cls-overview button:has-text('How to change it')")
+    assert page.is_visible("#setup")
+    setup = page.inner_text("#setup")
+    assert "export TYPESAFE_API_KEY" in setup and "authorship restart" in setup and "authorship classifier --test" in setup
+    assert "AUTHORSHIP_AUTO=0" in setup and "destroy novelty" in setup
+    page.keyboard.press("Escape")
+    # the default: Claude, no new party
+    conn = index.update(served.store)
+    index.store_status(conn, ledger.verify(served.store), 0, classifier=dict(
+        classifier.describe_backend(classifier.ClaudeCLI()), state="on"))
+    conn.close()
+    page.reload()
+    wait_js(page, "() => /Claude/.test(document.getElementById('cls-overview').textContent)")
+    assert "No new party receives your text" in page.inner_text("#cls-overview")
+    click_tab(page, "review")
+    assert "Labeled automatically by Claude" in page.inner_text("#cls-review")
+    assert problems == []
+    ctx.close()
+
+
+def jev_client_fake():
+    import jev_client
+    return jev_client.TypesafeProvider(key="k")
