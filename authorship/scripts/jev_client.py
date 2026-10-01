@@ -10,8 +10,9 @@ Answers are normalized to:
 plus "_model" (the model id the provider reports).
 
 Providers:
-    typesafe        POST https://api.typesafe.ai/v1/systemone      (TYPESAFE_API_KEY)
-    vercel_gateway  POST https://ai-gateway.vercel.sh/v1/evaluate  (AI_GATEWAY_API_KEY), zero data retention
+    typesafe        POST https://api.typesafe.ai/v1/systemone          (TYPESAFE_API_KEY)
+    openrouter      POST https://openrouter.ai/api/alpha/decisions     (OPENROUTER_API_KEY), zero data retention
+    vercel_gateway  POST https://ai-gateway.vercel.sh/v1/evaluate      (AI_GATEWAY_API_KEY), zero data retention
     fake            fixed outputs, for tests
 
 Standard library only. Nothing here runs unless AUTHORSHIP_JEV=1.
@@ -22,6 +23,7 @@ import urllib.request
 
 TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
 GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
+OPENROUTER_URL = "https://openrouter.ai/api/alpha/decisions"
 MAX_CHOICE_OPTIONS = 255
 
 
@@ -87,6 +89,36 @@ class TypesafeProvider(object):
         return res.get("answers") or {}, res.get("model") or model
 
 
+def openrouter_model(model):
+    """jev-1.13.0 -> typesafe/jev-1.13 (OpenRouter pins major.minor and answers with a dated snapshot)."""
+    if model and model.startswith("typesafe/"):
+        return model
+    parts = (model or "jev-1.13.0").split(".")
+    return "typesafe/" + ".".join(parts[:2])
+
+
+class OpenRouterProvider(object):
+    """OpenRouter's Decisions API, routed to TypeSafe. Same question and answer format as TypeSafe's own
+    API. Asks for zero-data-retention endpoints only, no data collection, and no fallback provider."""
+    name = "openrouter"
+
+    def __init__(self, key=None, url=None):
+        self.key = key or os.environ.get("OPENROUTER_API_KEY")
+        self.url = url or os.environ.get("AUTHORSHIP_JEV_ENDPOINT") or OPENROUTER_URL
+
+    @property
+    def endpoint(self):
+        return self.url
+
+    def call(self, state, questions, model):
+        if not self.key:
+            raise JevError("OPENROUTER_API_KEY is not set")
+        body = {"model": openrouter_model(model), "state": state, "questions": questions,
+                "provider": {"zdr": True, "data_collection": "deny", "allow_fallbacks": False}}
+        res = _post(self.url, self.key, body)
+        return res.get("answers") or {}, res.get("model") or body["model"]
+
+
 class VercelGatewayProvider(object):
     """Vercel AI Gateway. Its noul type is called "boolean" and it cannot pin a Jev version."""
     name = "vercel_gateway"
@@ -129,11 +161,18 @@ class FakeProvider(object):
 
 
 def default_provider():
-    """AUTHORSHIP_JEV_PROVIDER when set; otherwise whichever key is present (TypeSafe first)."""
+    """AUTHORSHIP_JEV_PROVIDER when set; otherwise whichever key is present: TypeSafe, then OpenRouter,
+    then the Vercel AI Gateway."""
     name = os.environ.get("AUTHORSHIP_JEV_PROVIDER")
     if not name:
-        name = "vercel_gateway" if (os.environ.get("AI_GATEWAY_API_KEY") and not os.environ.get("TYPESAFE_API_KEY")) \
-            else "typesafe"
+        name = "typesafe"
+        for env_key, provider in (("TYPESAFE_API_KEY", "typesafe"), ("OPENROUTER_API_KEY", "openrouter"),
+                                  ("AI_GATEWAY_API_KEY", "vercel_gateway")):
+            if os.environ.get(env_key):
+                name = provider
+                break
+    if name == "openrouter":
+        return OpenRouterProvider()
     if name == "vercel_gateway":
         return VercelGatewayProvider()
     if name == "typesafe":

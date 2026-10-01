@@ -293,9 +293,13 @@ def cmd_review(store, args, stdin=None, stdout=None):
 SETUP = """How to choose the classifier
   Claude (default)  nothing to set up: it uses the `claude` command and your login.
                     Model: export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001  (default claude-sonnet-5)
-  Jev               1. Get a key: https://docs.typesafe.ai (TypeSafe), or a Vercel AI Gateway key.
+  Jev               1. Get a key from one of: TypeSafe (https://docs.typesafe.ai), OpenRouter
+                       (https://openrouter.ai/keys, model typesafe/jev-1.13), or the Vercel AI Gateway.
                     2. Add it to your shell profile (~/.zshrc or ~/.bashrc), so every session has it:
-                         export TYPESAFE_API_KEY=...      (or: export AI_GATEWAY_API_KEY=...)
+                         export TYPESAFE_API_KEY=...      (TypeSafe)
+                         export OPENROUTER_API_KEY=...    (OpenRouter; asks for zero data retention)
+                         export AI_GATEWAY_API_KEY=...    (Vercel; asks for zero data retention)
+                       With more than one, TypeSafe wins, then OpenRouter; or set AUTHORSHIP_JEV_PROVIDER.
                     3. Open a new terminal, then: authorship restart
                     The text of your entries then goes to that provider: decide that before filing.
   Force one         export AUTHORSHIP_AUTO_BACKEND=claude   (or jev)

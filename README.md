@@ -86,12 +86,12 @@ Guide: [docs/VIEWER.md](authorship/docs/VIEWER.md).
 
 By default the classifier is Claude itself, run in the background through the `claude` command with your existing login. No setup is needed, and the text goes to no one new: Claude Code already sends it to Anthropic. A 7-entry session takes about 16 s and US$0.03.
 
-If you set a [Jev](https://docs.typesafe.ai/) key (`TYPESAFE_API_KEY`, or `AI_GATEWAY_API_KEY` for the Vercel AI Gateway), Jev is used instead. It is faster and cheaper, and returns measured probabilities. But it sends the text of your invention to a new party, so set the key only if that is acceptable before filing.
+If you set a [Jev](https://docs.typesafe.ai/) key, Jev is used instead. The key can come from TypeSafe, the maker (`TYPESAFE_API_KEY`); from [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) (`OPENROUTER_API_KEY`); or from the Vercel AI Gateway (`AI_GATEWAY_API_KEY`). It is faster and cheaper, and returns measured probabilities. But it sends the text of your invention to a new party, so set the key only if that is acceptable before filing.
 
 To switch to Jev:
 
 ```bash
-echo 'export TYPESAFE_API_KEY=your-key' >> ~/.zshrc   # or AI_GATEWAY_API_KEY; then open a new terminal
+echo 'export TYPESAFE_API_KEY=your-key' >> ~/.zshrc   # or OPENROUTER_API_KEY / AI_GATEWAY_API_KEY; open a new terminal
 authorship restart                                    # the annotator picks up the new settings
 authorship classifier --test                          # confirms which backend answers
 ```

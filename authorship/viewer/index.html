@@ -122,11 +122,17 @@
     <p>Another model: <code>export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001</code> (default <code>claude-sonnet-5</code>).</p>
     <h3>Jev</h3>
     <ol class="steps">
-      <li>Get a key from <a href="https://docs.typesafe.ai" target="_blank" rel="noopener">TypeSafe AI</a>, or a Vercel AI Gateway key (zero data retention).</li>
-      <li>Add it to your shell profile (<code>~/.zshrc</code> or <code>~/.bashrc</code>), so every session has it:
-        <pre class="cmd">export TYPESAFE_API_KEY=your-key
-# or, through Vercel:
-export AI_GATEWAY_API_KEY=your-key</pre></li>
+      <li>Get a key from one of these. Jev is the same model in all three; they differ in who bills you and who sees the text on the way:
+        <ul class="plain">
+          <li><a href="https://docs.typesafe.ai" target="_blank" rel="noopener">TypeSafe AI</a>, the maker, direct.</li>
+          <li><a href="https://openrouter.ai/keys" target="_blank" rel="noopener">OpenRouter</a> (model <code>typesafe/jev-1.13</code>). The plugin asks for zero data retention and no data collection.</li>
+          <li>The Vercel AI Gateway. The plugin asks for zero data retention.</li>
+        </ul></li>
+      <li>Add the key to your shell profile (<code>~/.zshrc</code> or <code>~/.bashrc</code>), so every session has it:
+        <pre class="cmd">export TYPESAFE_API_KEY=your-key     # TypeSafe
+export OPENROUTER_API_KEY=your-key   # or OpenRouter
+export AI_GATEWAY_API_KEY=your-key   # or Vercel</pre>
+        With more than one, TypeSafe wins, then OpenRouter. <code>export AUTHORSHIP_JEV_PROVIDER=openrouter</code> picks one.</li>
       <li>Open a new terminal and run <code>authorship restart</code>.</li>
       <li>Check it: <code>authorship classifier --test</code> sends one made-up sentence and shows the answer.</li>
     </ol>

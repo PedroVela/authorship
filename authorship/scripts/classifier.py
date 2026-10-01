@@ -263,12 +263,16 @@ class JevBackend(object):
         return out, reported, None
 
 
+JEV_KEYS = ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY")
+
+
 def default_backend():
-    """Jev when a Jev key is set, else the Claude CLI. AUTHORSHIP_AUTO_BACKEND=claude|jev forces one."""
+    """Jev when a Jev key is set (TypeSafe, OpenRouter or Vercel), else the Claude CLI.
+    AUTHORSHIP_AUTO_BACKEND=claude|jev forces one."""
     import jev_client
 
     forced = os.environ.get("AUTHORSHIP_AUTO_BACKEND")
-    has_jev = bool(os.environ.get("TYPESAFE_API_KEY") or os.environ.get("AI_GATEWAY_API_KEY"))
+    has_jev = any(os.environ.get(k) for k in JEV_KEYS)
     if forced == "jev" or (forced != "claude" and has_jev):
         if not jev_client.has_key():
             raise ClassifierError("AUTHORSHIP_AUTO_BACKEND=jev but no Jev key is set")
@@ -284,10 +288,11 @@ def describe_backend(b):
         return {"backend": None}
     if getattr(b, "name", "") == "jev":
         p = b.provider
-        gateway = p.name == "vercel_gateway"
+        sends_to = {"vercel_gateway": "the Vercel AI Gateway (zero data retention requested)",
+                    "openrouter": "OpenRouter, which routes it to TypeSafe (zero data retention and no data collection requested)",
+                    }.get(p.name, "TypeSafe AI (api.typesafe.ai)")
         return {"backend": "jev", "label": "Jev", "model": b.model, "provider": p.name, "endpoint": p.endpoint,
-                "sends_to": "the Vercel AI Gateway (zero data retention requested)" if gateway else "TypeSafe AI (api.typesafe.ai)",
-                "third_party": True}
+                "sends_to": sends_to, "third_party": True}
     if getattr(b, "name", "") == "claude-cli":
         return {"backend": "claude-cli", "label": "Claude", "model": b.model, "provider": "anthropic", "endpoint": "claude -p",
                 "sends_to": "Anthropic, through your Claude Code login (it already receives the session)", "third_party": False}

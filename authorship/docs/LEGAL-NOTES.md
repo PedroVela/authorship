@@ -18,7 +18,7 @@ The United States and Paraguay are first-to-file systems: priority comes from th
 
 - Keep the repository private. Do not push `.authorship/` or `authorship-exports/` to a public remote.
 - The automatic classifier sends entry text to a model. By default that model is Claude, through your existing Claude Code login. The same text already goes to Anthropic during the session, so no new party receives it.
-- Setting a Jev key (`TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY`) switches the classifier to Jev, a third-party service, and from then on the text of your invention goes to it. Do that only after thinking about confidentiality, preferably with zero data retention (the Vercel AI Gateway provider asks for it) or under a confidentiality agreement. `AUTHORSHIP_AUTO=0` keeps everything local except the Claude Code session itself.
+- Setting a Jev key (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY`) switches the classifier to Jev, a third-party service, and from then on the text of your invention goes to it (and, through OpenRouter or Vercel, also passes through them). Do that only after thinking about confidentiality, preferably with zero data retention (the plugin asks for it through OpenRouter and the Vercel AI Gateway) or under a confidentiality agreement. `AUTHORSHIP_AUTO=0` keeps everything local except the Claude Code session itself.
 - Anchoring sends only a hash of the ledger head to the timestamp authority, never ledger text.
 
 ## Confirmations matter

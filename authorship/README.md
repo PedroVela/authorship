@@ -133,10 +133,10 @@ You are a blue circle and Claude an orange square. Review answers are the only w
 On by default, as soon as the project is initialized. Full description: [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md).
 
 - **What it does.** Each new prompt, note and reply is classified in the background by the annotator. It finds the kind (problem, idea, hypothesis, decision, claim, discard, instruction), a new technical element, the stance toward an earlier element, its parents, maturity, and a change of stage. The answers become tags, stages, milestones and lineage edges.
-- **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. Jev takes over when `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY` is set: faster, with measured probabilities, but a new party receives the text.
+- **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. Jev takes over when `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set: faster, with measured probabilities, but a new party receives the text.
 - **Thresholds.** A label in your favor counts automatically from 0.80 and waits in `authorship review` between 0.50 and 0.80. A label against you (an AI-origin element) counts from 0.50.
 - **Where it goes.** Answers go to `annotations.jsonl`, with the backend, the model id, a prompt hash and every confidence. They never go to the ledger.
-- **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: set `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY` in your shell profile for Jev, then run `authorship restart`. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
+- **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: set `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` in your shell profile for Jev, then run `authorship restart`. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
 - **Corrections.** A typed tag wins over the classifier. `authorship review --all` rejects or edits any automatic label, as a human `Confirm` entry.
 
 Deterministic rules run alongside it, offline:
@@ -159,8 +159,8 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_AUTO` | `1` | `0`: no automatic classification (tags and rules still work) |
 | `AUTHORSHIP_AUTO_BACKEND` | chosen | `claude` or `jev`; by default Jev when a Jev key is set, else Claude |
 | `AUTHORSHIP_AUTO_MODEL` | `claude-sonnet-5` | Model for the Claude backend |
-| `TYPESAFE_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Jev key; setting one switches the classifier to Jev |
-| `AUTHORSHIP_JEV_PROVIDER` | by key | `typesafe` or `vercel_gateway` |
+| `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Jev key (TypeSafe, OpenRouter, Vercel); setting one switches the classifier to Jev |
+| `AUTHORSHIP_JEV_PROVIDER` | by key | `typesafe`, `openrouter` or `vercel_gateway` (by default the first key found, in that order) |
 | `AUTHORSHIP_JEV` | unset | `1`: also run the spec's Tier 1 questions (calibration) |
 | `AUTHORSHIP_VIEWER_PORT` | `47291` | First port tried |
 | `AUTHORSHIP_VIEWER_OPEN` | `1` | `0`: do not open the browser |

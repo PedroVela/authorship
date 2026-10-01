@@ -88,6 +88,9 @@ The spec makes Tier 0 depend on tags the human types, and keeps Tier 1 (Jev) opt
 
 35. **The classifier in use is visible.** The annotator records the backend it used in the index, with the model, where the text goes and the last error. The viewer shows it on Overview and Review, with a setup dialog. `authorship classifier` prints it and the setup steps (`--test` checks a key with one made-up sentence). `authorship restart` restarts the annotator and viewer with the terminal's settings, because the annotator outlives sessions and keeps the environment it started with. `restart` and `classifier --test` are human-only: a restart chooses where entry text is sent.
 
+36. **Jev through OpenRouter.** Jev is also on OpenRouter's Decisions API (`POST https://openrouter.ai/api/alpha/decisions`, model `typesafe/jev-1.13`, same question format as TypeSafe). `OPENROUTER_API_KEY` selects it, after a TypeSafe key and before a Vercel one. Requests ask for zero-data-retention endpoints only (`provider.zdr`), `data_collection: deny`, and no fallback. The dated snapshot that answered is stored as the model.
+37. **Version 0.2.0**, so existing installs pick up the changes since 0.1.0 on `/plugin marketplace update`.
+
 ## Process
 
 27. Phases 4 (viewer) and 5 (skills, anchoring, status line) were built in parallel, each against its own acceptance tests, and the full suite was run before each commit.

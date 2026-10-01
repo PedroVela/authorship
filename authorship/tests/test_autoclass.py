@@ -222,8 +222,8 @@ def test_off_switch_and_missing_cli(untagged, monkeypatch):
     monkeypatch.setenv("AUTHORSHIP_CLAUDE_BIN", "/nonexistent")
     monkeypatch.delenv("CLAUDE_CODE_EXECPATH", raising=False)
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
-    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    monkeypatch.delenv("AI_GATEWAY_API_KEY", raising=False)
+    for k in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
     assert annotator.run_once(untagged)["auto_state"] == "no-backend"
 
 
@@ -298,13 +298,16 @@ def test_jev_backend_drives_the_same_automatic_pipeline(untagged, monkeypatch):
 
 
 def test_backend_selection(monkeypatch):
-    for k in ("TYPESAFE_API_KEY", "AI_GATEWAY_API_KEY", "AUTHORSHIP_AUTO_BACKEND", "AUTHORSHIP_JEV_PROVIDER"):
+    for k in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY", "AUTHORSHIP_AUTO_BACKEND", "AUTHORSHIP_JEV_PROVIDER"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("AUTHORSHIP_CLAUDE_BIN", sys.executable)  # any executable stands in for claude
     assert isinstance(clf.default_backend(), clf.ClaudeCLI)
     monkeypatch.setenv("AI_GATEWAY_API_KEY", "k")
     b = clf.default_backend()
     assert isinstance(b, clf.JevBackend) and b.provider.name == "vercel_gateway"
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    b = clf.default_backend()
+    assert b.provider.name == "openrouter" and "OpenRouter" in clf.describe_backend(b)["sends_to"]
     monkeypatch.setenv("TYPESAFE_API_KEY", "k")
     assert clf.default_backend().provider.name == "typesafe"
     monkeypatch.setenv("AUTHORSHIP_AUTO_BACKEND", "claude")

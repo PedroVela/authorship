@@ -331,3 +331,38 @@ def test_real_providers_request_shape(monkeypatch, provider_cls, url_part):
         assert seen["body"]["providerOptions"]["gateway"]["zeroDataRetention"] is True
     else:
         assert seen["body"]["model"] == "jev-1.13.0"
+
+
+def test_openrouter_provider_request_shape(monkeypatch):
+    seen = {}
+
+    def fake_post(url, key, body, timeout=30):
+        seen.update(url=url, key=key, body=body)
+        return {"model": "typesafe/jev-1.13-20260917", "provider": "TypeSafe",
+                "answers": {"q": {"type": "noul", "noul": 0.8},
+                            "c": {"type": "choice", "choice": "a", "confidence": 0.7, "probabilities": {"a": 0.7, "b": 0.3}}}}
+
+    monkeypatch.setattr(jev_client, "_post", fake_post)
+    ans = jev_client.evaluate({"entry": "x"}, {"q": {"type": "noul", "instructions": "?"},
+                                               "c": {"type": "choice", "instructions": "?", "criteria": {"a": "A", "b": "B"}}},
+                              provider=jev_client.OpenRouterProvider(key="k"), model="jev-1.13.0")
+    assert seen["url"] == "https://openrouter.ai/api/alpha/decisions" and seen["key"] == "k"
+    assert seen["body"]["model"] == "typesafe/jev-1.13"
+    assert seen["body"]["questions"]["q"]["type"] == "noul"  # OpenRouter keeps TypeSafe's question types
+    assert seen["body"]["provider"] == {"zdr": True, "data_collection": "deny", "allow_fallbacks": False}
+    assert ans["q"] == {"type": "noul", "p": 0.8} and ans["c"]["probabilities"] == {"a": 0.7, "b": 0.3}
+    assert ans["_model"] == "typesafe/jev-1.13-20260917"
+
+
+def test_provider_choice_by_key(monkeypatch):
+    for k in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY", "AUTHORSHIP_JEV_PROVIDER"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    assert jev_client.default_provider().name == "openrouter"
+    monkeypatch.setenv("AI_GATEWAY_API_KEY", "k")
+    assert jev_client.default_provider().name == "openrouter"   # OpenRouter before Vercel
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    assert jev_client.default_provider().name == "typesafe"     # the maker first
+    monkeypatch.setenv("AUTHORSHIP_JEV_PROVIDER", "openrouter")
+    assert jev_client.default_provider().name == "openrouter"
+    assert jev_client.openrouter_model("jev-1.13.0") == "typesafe/jev-1.13"

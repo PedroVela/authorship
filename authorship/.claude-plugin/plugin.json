@@ -1,7 +1,7 @@
 {
   "name": "authorship",
   "displayName": "Authorship Ledger",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Records, protects, classifies and visualizes how a human and Claude co-develop an invention, as tamper-evident, timestamped evidence of the human's inventive contribution.",
   "author": {
     "name": "Authorship contributors"

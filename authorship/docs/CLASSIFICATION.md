@@ -31,9 +31,9 @@ Each request carries:
 
 | | Claude (default) | Jev |
 |---|---|---|
-| When it is used | Always, unless a Jev key is set | When `TYPESAFE_API_KEY` or `AI_GATEWAY_API_KEY` is set |
-| Setup | None: it uses the `claude` command and the login you already have | A key from [TypeSafe](https://docs.typesafe.ai/) or the Vercel AI Gateway |
-| Who receives the text | Anthropic, which already receives it during the session | TypeSafe or Vercel: a party that did not have it before |
+| When it is used | Always, unless a Jev key is set | When `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set |
+| Setup | None: it uses the `claude` command and the login you already have | A key from [TypeSafe](https://docs.typesafe.ai/), [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) or the Vercel AI Gateway |
+| Who receives the text | Anthropic, which already receives it during the session | TypeSafe, plus OpenRouter or Vercel when you go through them: parties that did not have it before |
 | Confidence values | Stated by the model | Measured probabilities, with the full vector stored |
 | Speed and cost (golden 7-entry session) | ~16 s, ~US$0.026 (Sonnet) | One call per entry; about $0.042 per million input tokens |
 | Free-text summary | Yes | No |
@@ -54,7 +54,15 @@ So it cannot read or change the project, and it is not recorded in the ledger. S
 
 Each entry is one Jev request: choice questions for kind, stance, target and stage, a noul question for "new element", and a score question for maturity. Jev cannot write text, so there is no summary. Jev returns one probability vector over all candidate targets, so each element the entry builds on gets a share of it; any candidate with probability 0.30 or more counts as a parent.
 
-The provider is TypeSafe when `TYPESAFE_API_KEY` is set, otherwise the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), which is asked for zero data retention. `AUTHORSHIP_JEV_PROVIDER` overrides the choice.
+Jev is the same model through three providers. They differ in who bills you and who sees the text on the way:
+
+| Provider | Key | Endpoint | Notes |
+|---|---|---|---|
+| TypeSafe (the maker) | `TYPESAFE_API_KEY` | `POST https://api.typesafe.ai/v1/systemone` | Pinned to `jev-1.13.0`. Zero data retention is for enterprise accounts. |
+| OpenRouter | `OPENROUTER_API_KEY` | `POST https://openrouter.ai/api/alpha/decisions` | Model `typesafe/jev-1.13`, answered by a dated snapshot, which is stored. The plugin asks for zero-data-retention endpoints only, no data collection, and no fallback provider. Billed to your OpenRouter account. |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `POST https://ai-gateway.vercel.sh/v1/evaluate` | Asked for zero data retention. Cannot pin a Jev version, so the version that answered is stored. |
+
+With several keys set, the first in that order is used; `AUTHORSHIP_JEV_PROVIDER=typesafe|openrouter|vercel_gateway` picks one.
 
 Setting the key is the decision to send entry text to that provider; there is no extra prompt. See [LEGAL-NOTES](LEGAL-NOTES.md#keep-it-private).
 
@@ -80,11 +88,12 @@ authorship restart
 
 **Jev.**
 
-1. Get a key from [TypeSafe AI](https://docs.typesafe.ai), or a Vercel AI Gateway key, which requests zero data retention.
+1. Get a key from [TypeSafe AI](https://docs.typesafe.ai), from [OpenRouter](https://openrouter.ai/keys), or from the Vercel AI Gateway (see the table above for the differences).
 2. Add it to your shell profile (`~/.zshrc` or `~/.bashrc`), so every Claude Code session has it:
 
    ```bash
-   export TYPESAFE_API_KEY=your-key      # or: export AI_GATEWAY_API_KEY=your-key
+   export TYPESAFE_API_KEY=your-key      # or: export OPENROUTER_API_KEY=your-key
+                                         # or: export AI_GATEWAY_API_KEY=your-key
    ```
 
 3. Open a new terminal and run `authorship restart`.
