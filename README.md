@@ -13,7 +13,7 @@ To see what this looks like in practice, jump to [How a conversation becomes evi
 
 > Not legal advice, and no substitute for filing: patent priority comes from the filing date. Keep any repository that holds a ledger private. See [LEGAL-NOTES](authorship/docs/LEGAL-NOTES.md).
 
-## Start in three steps
+## Start in two steps
 
 **1. Install the plugin** (inside Claude Code):
 
@@ -28,17 +28,37 @@ To see what this looks like in practice, jump to [How a conversation becomes evi
 /authorship:init
 ```
 
-Recording starts right away, with no restart, and a local viewer opens in your browser.
+That one command sets everything up:
+- it starts recording, with no restart;
+- it opens the viewer in your browser;
+- it adds the protection rules;
+- it installs your `authorship` command;
+- it ends with a setup check like this one:
 
-**3. Install your command** (once, in a normal terminal, outside Claude Code):
-
-```bash
-python3 ~/.claude/plugins/cache/authorship-dev/authorship/*/scripts/cli.py install
+```text
+Setup check:
+  ✓ Python                                 3.9
+  ✓ authorship command                     /Users/you/.local/bin/authorship
+  ✓ Classifier                             Claude (claude-sonnet-5): text goes to Anthropic, ...
+  ✓ RFC 3161 timestamps                    openssl
+  ✗ Bitcoin timestamps (OpenTimestamps)    ots not installed
+      doctor --fix installs opentimestamps-client in a private environment
+  ✓ Record                                 1 entries, intact
+  ✓ Protection rules                       in .claude/settings.json
+  ✓ Background annotator and viewer        running
+  • Sandbox                                off
+      recommended: run /sandbox in Claude Code
 ```
 
-This gives you `authorship`, your side of the system. It works from any folder inside the project.
+If anything is marked `doctor --fix` (usually: `~/.local/bin` is not on your PATH yet, or the Bitcoin timestamp client is missing), run this once in a normal terminal, outside Claude Code:
 
-Requirements: Claude Code 2.1.281+, Python 3.9+, and [`uv`](https://docs.astral.sh/uv/) (for the tools Claude uses to look things up in the ledger).
+```bash
+~/.local/bin/authorship doctor --fix
+```
+
+It adds `~/.local/bin` to your shell profile, installs the OpenTimestamps client in a private environment, and starts anything that is not running. `authorship doctor` without `--fix` only checks, any time.
+
+Requirements: Claude Code 2.1.281+ and Python 3.9+ (on a Mac, `python3` comes with the Command Line Tools). Nothing else to install by hand.
 
 ## How you use it
 
@@ -323,7 +343,8 @@ Hashes differ in each run; `tests/validate_citations.py` checks that every one r
 |---|---|
 | `refuses to run from Claude Code` | `note`, `review`, `seal` and `open` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
 | The viewer did not open | `authorship open`. The page explains itself under "How to read this"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
-| Claude cannot look things up in the ledger | Install [`uv`](https://docs.astral.sh/uv/), then restart Claude Code. |
+| Something does not work | `authorship doctor` checks every piece and prints the fix; `authorship doctor --fix` applies the ones it can. |
+| Claude cannot look things up in the ledger | Restart Claude Code; the lookup server runs on the same `python3` as the hooks. `/mcp` inside Claude Code shows its state. |
 | `authorship: no .authorship/ here` | You are outside a recorded project; `cd` into it, or run `/authorship:init`. |
 | `authorship verify` says `BROKEN at #N` | Entry N was changed after it was written. Do not "fix" the ledger; tell your attorney. Git history shows when it changed. |
 | Claude says `authorship guard: blocked` on normal work | The guard is too strict for that command: run it yourself, and report it as a bug. |

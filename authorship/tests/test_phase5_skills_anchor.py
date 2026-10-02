@@ -283,3 +283,21 @@ def test_statusline_shows_broken_chain(qr):
 
 def test_statusline_empty_outside_initialized_projects(project):
     assert statusline(project)[0] == ""
+
+
+def test_imprint_check_reads_bytes_not_openssl_text(fake_tsa, tmp_path):
+    """openssl's text dump drops trailing 0x20/0x00 bytes of the imprint; the check must not depend on it."""
+    import hashlib
+    d = os.path.dirname(fake_tsa["env"]["AUTHORSHIP_TSA_CAFILE"])
+    misses = 0
+    for i in range(150):
+        txt = tmp_path / ("a%d.txt" % i)
+        txt.write_text("authorship-ledger\nseq: %d\n" % i)
+        q, r = str(tmp_path / "q.tsq"), str(tmp_path / "r.tsr")
+        subprocess.run(["openssl", "ts", "-query", "-data", str(txt), "-sha256", "-cert", "-out", q], check=True, capture_output=True)
+        subprocess.run(["openssl", "ts", "-reply", "-queryfile", q, "-config", "tsa.cnf", "-section", "tsa_config", "-out", r],
+                       cwd=d, check=True, capture_output=True)
+        want = hashlib.sha256(txt.read_bytes()).hexdigest()
+        misses += not anchor.covers(open(r, "rb").read(), want)
+        assert not anchor.covers(open(r, "rb").read(), hashlib.sha256(b"other").hexdigest())
+    assert misses == 0

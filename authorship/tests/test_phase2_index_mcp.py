@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -110,14 +109,12 @@ def test_twenty_kb_cap(project):
     assert queries.cap({"items": [], "big": "x" * 30000})["truncated"] is True
 
 
-def _uv():
-    return shutil.which("uv")
-
-
-@pytest.mark.skipif(not _uv(), reason="uv not installed")
 def test_mcp_server_lists_exactly_seven_read_only_tools(qr_confirmed):
+    """The server is standard-library Python, started exactly as .mcp.json starts it."""
+    cfg = json.load(open(os.path.join(harness.PLUGIN, ".mcp.json")))["mcpServers"]["authorship"]
+    assert cfg["command"] == "python3" and cfg["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py"]
     env = harness.hook_env(qr_confirmed.project)
-    proc = subprocess.Popen([_uv(), "run", "--quiet", "--script", os.path.join(SCRIPTS, "mcp_server.py")],
+    proc = subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "mcp_server.py")],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
 
     def rpc(msg):
@@ -153,3 +150,22 @@ def test_mcp_server_lists_exactly_seven_read_only_tools(qr_confirmed):
     finally:
         proc.kill()
         proc.wait()
+
+
+def test_mcp_protocol_edges(qr):
+    import mcp_server
+    assert mcp_server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    init = mcp_server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2099-01-01"}})
+    assert init["result"]["protocolVersion"] == mcp_server.PROTOCOLS[0] and init["result"]["capabilities"]["tools"]
+    assert mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "ping"})["result"] == {}
+    assert mcp_server.handle({"jsonrpc": "2.0", "id": 3, "method": "resources/list"})["error"]["code"] == -32601
+    assert mcp_server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "write_entry"}})["error"]["code"] == -32602
+    bad = mcp_server.handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "get_node", "arguments": {}}})
+    assert bad["result"]["isError"] is True
+    os.environ["AUTHORSHIP_PROJECT_DIR"] = qr.project
+    try:
+        ok = mcp_server.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/call",
+                                "params": {"name": "get_node", "arguments": {"seq": "4"}}})
+    finally:
+        del os.environ["AUTHORSHIP_PROJECT_DIR"]
+    assert ok["result"]["structuredContent"]["seq"] == 4

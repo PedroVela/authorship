@@ -21,6 +21,7 @@ def hook_env(project, **extra):
     env["AUTHORSHIP_NO_DAEMONS"] = "1"
     env["AUTHORSHIP_AUTO"] = "0"  # never call the real classifier from tests
     env["AUTHORSHIP_HINT"] = "0"
+    env["AUTHORSHIP_BIN_DIR"] = os.path.join(project if os.path.isdir(project) else "/tmp", ".test-bin")  # never ~/.local/bin
     env["CLAUDE_PLUGIN_ROOT"] = PLUGIN
     env.update(extra)
     return env

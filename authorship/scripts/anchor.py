@@ -34,8 +34,21 @@ def _run(argv, timeout=60, **kw):
     return subprocess.run(argv, capture_output=True, timeout=timeout, **kw)
 
 
+OTS_HOME = os.environ.get("AUTHORSHIP_OTS_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share", "authorship", "ots")
+
+
+def ots_bin():
+    """The `ots` client: on the PATH, or where `authorship doctor --fix` installs it."""
+    local_bin = os.environ.get("AUTHORSHIP_BIN_DIR") or os.path.join(os.path.expanduser("~"), ".local", "bin")
+    for c in (shutil.which("ots"), os.path.join(local_bin, "ots"),
+              os.path.join(OTS_HOME, "bin", "ots")):
+        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
 def ots_available():
-    return os.environ.get("AUTHORSHIP_OTS", "1") != "0" and shutil.which("ots") is not None
+    return os.environ.get("AUTHORSHIP_OTS", "1") != "0" and ots_bin() is not None
 
 
 def tsa_url():
@@ -95,22 +108,28 @@ def rfc3161(store, txt, base, url):
     return check
 
 
-def _imprint(tsr):
+def _status(tsr):
     r = _run(["openssl", "ts", "-reply", "-in", tsr, "-text"])
-    out = r.stdout.decode(errors="replace")
-    status = re.search(r"Status: (\w+)", out)
-    hexes = re.findall(r"^\s+[0-9a-f]{4} - ((?:[0-9a-f]{2}[ -]){1,16})", out, re.M)
-    digest = "".join(h.replace("-", " ").replace(" ", "") for h in hexes)
-    return (status.group(1) if status else None), digest
+    m = re.search(r"Status: (\w+)", r.stdout.decode(errors="replace"))
+    return m.group(1) if m else None
+
+
+def covers(tsr_bytes, digest_hex):
+    """True when the DER response carries this SHA-256 as its message imprint (OCTET STRING, 32 bytes).
+    Read from the bytes: openssl's text dump drops trailing spaces and NULs from the hex, which made a
+    text comparison fail on about 1 response in 70."""
+    return (b"\x04\x20" + bytes.fromhex(digest_hex)) in tsr_bytes
 
 
 def check_tsr(store, txt, tsr, url=None):
     with open(txt, "rb") as f:
         want = hashlib.sha256(f.read()).hexdigest()
-    status, digest = _imprint(tsr)
+    status = _status(tsr)
     if status != "Granted":
         return {"ok": False, "reason": "TSA status %s" % status}
-    if digest[:64] != want:
+    with open(tsr, "rb") as f:
+        tsr_bytes = f.read()
+    if not covers(tsr_bytes, want):
         return {"ok": False, "reason": "timestamp imprint does not match %s" % os.path.basename(txt)}
     ca, cert = _tsa_certs(store, url or tsa_url())
     if not ca:
@@ -126,7 +145,7 @@ def check_tsr(store, txt, tsr, url=None):
 
 
 def ots_stamp(txt, base):
-    r = _run(["ots", "stamp", txt], timeout=120)
+    r = _run([ots_bin(), "stamp", txt], timeout=120)
     if r.returncode != 0:
         raise RuntimeError("ots stamp failed: %s" % r.stderr.decode(errors="replace")[:300])
     os.replace(txt + ".ots", base + ".ots")
@@ -183,7 +202,7 @@ def run(store):
 
 def upgrade(store):
     """Run `ots upgrade` on pending stamps; write a complete Anchor when every method is done."""
-    if not shutil.which("ots"):
+    if not ots_bin():
         return []
     state = {}
     for _, _, e in ledger.read_entries(store):
@@ -199,8 +218,8 @@ def upgrade(store):
         base = os.path.join(store.anchors, "%d-%s" % (seq, s["hash"][:16]))
         if not os.path.exists(base + ".ots"):
             continue
-        _run(["ots", "upgrade", base + ".ots"], timeout=120)
-        r = _run(["ots", "verify", "-f", base + ".txt", base + ".ots"], timeout=120)
+        _run([ots_bin(), "upgrade", base + ".ots"], timeout=120)
+        r = _run([ots_bin(), "verify", "-f", base + ".txt", base + ".ots"], timeout=120)
         out = (r.stdout + r.stderr).decode(errors="replace")
         if r.returncode == 0 and "Bitcoin block" in out:
             done = sorted(s["done"] | {"ots"})
@@ -239,8 +258,8 @@ def verify_anchors(store):
                 d["rfc3161"] = c.get("signature") if c["ok"] else c["reason"]
                 d["ok"] = d["ok"] and c["ok"]
             if os.path.exists(base + ".ots"):
-                if shutil.which("ots"):
-                    r = _run(["ots", "verify", "-f", txt, base + ".ots"], timeout=120)
+                if ots_bin():
+                    r = _run([ots_bin(), "verify", "-f", txt, base + ".ots"], timeout=120)
                     out = (r.stdout + r.stderr).decode(errors="replace")
                     d["ots"] = "verified" if r.returncode == 0 and "Bitcoin block" in out else "pending or unverifiable"
                 else:

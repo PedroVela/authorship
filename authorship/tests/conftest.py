@@ -9,10 +9,11 @@ import harness  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _no_live_classifier(monkeypatch):
+def _no_live_classifier(monkeypatch, tmp_path):
     """Tests that want the classifier pass a FakeClassifier explicitly."""
     monkeypatch.setenv("AUTHORSHIP_AUTO", "0")
     monkeypatch.setenv("AUTHORSHIP_HINT", "0")
+    monkeypatch.setenv("AUTHORSHIP_BIN_DIR", str(tmp_path / "bin"))  # never write to the real ~/.local/bin
 
 
 @pytest.fixture

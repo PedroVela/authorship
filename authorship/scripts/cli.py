@@ -14,6 +14,7 @@
                                     (--test sends one made-up sentence to check the setup)
     authorship restart              restart the annotator and viewer with this terminal's settings
     authorship install [--bin-dir DIR]   put `authorship` on your PATH (~/.local/bin)
+    authorship doctor [--fix]       check every piece; --fix installs what is missing
 
 The project is found like git finds a repository: the nearest directory, from
 the current one upward, that holds .authorship/. Use --project DIR to override.
@@ -411,16 +412,185 @@ exec python3 "$CLI" "$@"
 """
 
 
-def cmd_install(args):
-    bin_dir = os.path.expanduser(_pop_flag(args, "--bin-dir") or "~/.local/bin")
+def bin_dir():
+    """Where the `authorship` and `ots` commands go (AUTHORSHIP_BIN_DIR overrides, for tests)."""
+    return os.environ.get("AUTHORSHIP_BIN_DIR") or os.path.join(os.path.expanduser("~"), ".local", "bin")
+
+
+def install_wrapper(bin_dir=None):
+    """Write the `authorship` command. Returns (path, bin_dir is on PATH)."""
+    bin_dir = os.path.expanduser(bin_dir or globals()["bin_dir"]())
     os.makedirs(bin_dir, exist_ok=True)
     target = os.path.join(bin_dir, "authorship")
     with open(target, "w") as f:
         f.write(WRAPPER % {"cli": os.path.abspath(__file__)})
     os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return target, bin_dir in os.environ.get("PATH", "").split(os.pathsep)
+
+
+def cmd_install(args):
+    target, on_path = install_wrapper(_pop_flag(args, "--bin-dir"))
     print("installed %s" % target)
-    if bin_dir not in os.environ.get("PATH", "").split(os.pathsep):
-        print("%s is not on your PATH. Add this to your shell profile:\n  export PATH=\"%s:$PATH\"" % (bin_dir, bin_dir))
+    if not on_path:
+        d = os.path.dirname(target)
+        print("%s is not on your PATH. Add this to your shell profile:\n  export PATH=\"%s:$PATH\"" % (d, d))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# doctor: check every piece, say what is missing and how to fix it
+
+def shell_profile():
+    shell = os.path.basename(os.environ.get("SHELL", ""))
+    name = ".zshrc" if shell == "zsh" else ".bash_profile" if sys.platform == "darwin" and shell == "bash" else ".bashrc"
+    return os.path.join(os.path.expanduser("~"), name)
+
+
+PATH_LINE = 'export PATH="$HOME/.local/bin:$PATH"  # authorship'
+
+
+def add_path_line():
+    """Append ~/.local/bin to the PATH in the shell profile, once. Returns the profile path, or None if present."""
+    prof = shell_profile()
+    try:
+        with open(prof) as f:
+            if ".local/bin" in f.read():
+                return None
+    except OSError:
+        pass
+    with open(prof, "a") as f:
+        f.write("\n" + PATH_LINE + "\n")
+    return prof
+
+
+def install_ots():
+    """OpenTimestamps client in a private virtualenv, linked as ~/.local/bin/ots. Returns the path."""
+    import subprocess
+    import anchor
+
+    venv = anchor.OTS_HOME
+    if not os.path.exists(os.path.join(venv, "bin", "python")):
+        subprocess.run([sys.executable, "-m", "venv", venv], check=True, capture_output=True, timeout=300)
+    subprocess.run([os.path.join(venv, "bin", "python"), "-m", "pip", "install", "--quiet", "--upgrade",
+                    "opentimestamps-client"], check=True, capture_output=True, timeout=600)
+    os.makedirs(bin_dir(), exist_ok=True)
+    link = os.path.join(bin_dir(), "ots")
+    if not os.path.exists(link):
+        os.symlink(os.path.join(venv, "bin", "ots"), link)
+    return link
+
+
+def _sandbox_on(project):
+    for p in (os.path.join(os.path.expanduser("~"), ".claude", "settings.json"),
+              os.path.join(project or "", ".claude", "settings.json"), os.path.join(project or "", ".claude", "settings.local.json")):
+        try:
+            import json as _j
+            with open(p) as f:
+                if ((_j.load(f).get("sandbox") or {}).get("enabled")):
+                    return True
+        except (OSError, ValueError, AttributeError):
+            pass
+    return False
+
+
+def doctor_checks(store=None):
+    """[(state, item, detail, fix)] with state 'ok' | 'fix' (doctor --fix can do it) | 'todo' (you do it) | 'info'."""
+    import shutil
+    import anchor
+    import classifier
+
+    out = []
+    v = sys.version_info
+    out.append(("ok" if v >= (3, 9) else "todo", "Python", "%d.%d" % (v[0], v[1]), "install Python 3.9 or later"))
+    wrapper = os.path.join(bin_dir(), "authorship")
+    on_path = bin_dir() in os.environ.get("PATH", "").split(os.pathsep)
+    if not os.path.exists(wrapper):
+        out.append(("fix", "authorship command", "not installed", "installs ~/.local/bin/authorship"))
+    elif not on_path:
+        out.append(("fix", "authorship command", "installed, but ~/.local/bin is not on your PATH",
+                    "adds it to %s" % shell_profile()))
+    else:
+        out.append(("ok", "authorship command", wrapper, ""))
+    try:
+        b = classifier.default_backend() if os.environ.get("AUTHORSHIP_AUTO", "1") != "0" else None
+        d = classifier.describe_backend(b)
+        if os.environ.get("AUTHORSHIP_AUTO", "1") == "0":
+            out.append(("info", "Classifier", "off (AUTHORSHIP_AUTO=0)", "unset AUTHORSHIP_AUTO to label entries automatically"))
+        elif b is None:
+            out.append(("todo", "Classifier", "no `claude` command and no Jev key", "install Claude Code, or set a Jev key"))
+        else:
+            out.append(("ok", "Classifier", "%s (%s): text goes to %s" % (d["label"], d.get("model"), d["sends_to"]), ""))
+    except Exception as exc:
+        out.append(("todo", "Classifier", str(exc), "see `authorship classifier`"))
+    out.append(("ok" if shutil.which("openssl") else "todo", "RFC 3161 timestamps", "openssl" if shutil.which("openssl")
+                else "openssl not found", "" if shutil.which("openssl") else "install openssl"))
+    ots = anchor.ots_bin()
+    out.append(("ok" if ots else "fix", "Bitcoin timestamps (OpenTimestamps)", ots or "ots not installed",
+                "" if ots else "installs opentimestamps-client in a private environment"))
+    if store is not None and store.exists():
+        v = ledger.verify(store, check_blobs=False)
+        out.append(("ok" if v["ok"] else "todo", "Record", "%d entries, %s" % (v["entries"], "intact" if v["ok"] else
+                    "BROKEN at #%s" % v["broken_at"]), "" if v["ok"] else "tell your attorney; do not edit the ledger"))
+        try:
+            import json as _j
+            with open(os.path.join(store.project, ".claude", "settings.json")) as f:
+                deny = (_j.load(f).get("permissions") or {}).get("deny") or []
+            rules_ok = "Edit(/.authorship/**)" in deny
+        except (OSError, ValueError):
+            rules_ok = False
+        out.append(("ok" if rules_ok else "todo", "Protection rules", "in .claude/settings.json" if rules_ok else "missing",
+                    "" if rules_ok else "run /authorship:init in Claude Code"))
+        alive = [n for n in ("annotator", "viewer") if ledger._pid_alive(os.path.join(store.run, n + ".pid"))]
+        out.append(("ok" if len(alive) == 2 else "fix", "Background annotator and viewer",
+                    "running" if len(alive) == 2 else "not running: " + ", ".join(n for n in ("annotator", "viewer") if n not in alive),
+                    "" if len(alive) == 2 else "starts them"))
+        out.append(("ok" if _sandbox_on(store.project) else "info", "Sandbox", "on" if _sandbox_on(store.project) else
+                    "off", "" if _sandbox_on(store.project) else "recommended: run /sandbox in Claude Code"))
+    else:
+        out.append(("info", "Project", "not inside a recorded project", "run /authorship:init in the project, in Claude Code"))
+    return out
+
+
+def print_checks(checks, stdout=None):
+    stdout = stdout or sys.stdout
+    mark = {"ok": "\u2713", "fix": "\u2717", "todo": "\u2717", "info": "\u2022"}
+    for state, item, detail, fix in checks:
+        stdout.write("  %s %-38s %s\n" % (mark[state], item, detail))
+        if state != "ok" and fix:
+            stdout.write("      %s%s\n" % ("doctor --fix " if state == "fix" else "", fix))
+    n_fix = sum(1 for c in checks if c[0] == "fix")
+    return n_fix
+
+
+def cmd_doctor(args, stdout=None):
+    stdout = stdout or sys.stdout
+    project = _pop_flag(args, "--project") or os.environ.get("AUTHORSHIP_PROJECT_DIR") or find_project()
+    store = ledger.Store(project) if project else None
+    fix = "--fix" in args
+    if fix:
+        ledger.require_human("authorship doctor --fix")
+        for state, item, _, _ in doctor_checks(store):
+            if state != "fix":
+                continue
+            try:
+                if item == "authorship command":
+                    path, _ = install_wrapper()
+                    prof = add_path_line()
+                    stdout.write("fixed: %s%s\n" % (path, "; added ~/.local/bin to %s (open a new terminal)" % prof if prof else ""))
+                elif item.startswith("Bitcoin"):
+                    stdout.write("installing opentimestamps-client (a minute)...\n")
+                    stdout.write("fixed: %s\n" % install_ots())
+                elif item.startswith("Background") and store is not None:
+                    os.environ.pop("AUTHORSHIP_NO_DAEMONS", None)
+                    ledger.ensure_daemons(store)
+                    stdout.write("fixed: started the annotator and the viewer\n")
+            except Exception as exc:
+                stdout.write("could not fix %s: %s\n" % (item, exc))
+        stdout.write("\n")
+    stdout.write("authorship doctor%s\n" % (" (" + store.project + ")" if store is not None else ""))
+    n_fix = print_checks(doctor_checks(store), stdout)
+    if n_fix and not fix:
+        stdout.write("\nRun `authorship doctor --fix` in your terminal to fix the %d item(s) marked doctor --fix.\n" % n_fix)
     return 0
 
 
@@ -438,6 +608,8 @@ def main(argv):
         ledger.require_human("authorship %s" % cmd)
     if cmd == "install":
         return cmd_install(rest)
+    if cmd == "doctor":
+        return cmd_doctor(rest)
     if cmd == "init":
         return cmd_init(rest)
     if cmd not in COMMANDS:

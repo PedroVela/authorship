@@ -93,6 +93,16 @@ def activate(project):
         return f.read()
 
 
+def setup_command():
+    """Install the `authorship` command (~/.local/bin). Returns (path, on PATH)."""
+    import cli
+
+    try:
+        return cli.install_wrapper()
+    except OSError:
+        return None, False
+
+
 def main(argv):
     as_json = "--json" in argv
     project = ledger.project_dir()
@@ -100,6 +110,7 @@ def main(argv):
         project = os.path.abspath(argv[argv.index("--project") + 1])
     res = init(project)
     res["protocol"] = activate(project)
+    res["command"], res["command_on_path"] = setup_command()
     if as_json:
         print(json.dumps(res))
         return 0
@@ -121,8 +132,17 @@ def main(argv):
     print()
     print("Keep this repository private: public disclosure before filing can destroy novelty.")
     print()
-    print("Your commands (note, log, verify, seal, open) live in one CLI. Put it on your PATH once, in your own terminal:")
-    print("  python3 \"%s\" install" % os.path.join(ledger.SCRIPTS_DIR, "cli.py"))
+    import cli
+
+    if res["command"] and res["command_on_path"]:
+        print("Installed your command: `authorship` (%s)." % res["command"])
+    elif res["command"]:
+        print("Installed your command at %s, but ~/.local/bin is not on your PATH yet." % res["command"])
+    print("Setup check:")
+    n_fix = cli.print_checks(cli.doctor_checks(ledger.Store(project)))
+    if n_fix:
+        print("To fix the items marked doctor --fix, run this once in your own terminal (not in Claude Code):")
+        print("  %s doctor --fix" % (res["command"] or "python3 %s" % os.path.join(ledger.SCRIPTS_DIR, "cli.py")))
     print()
     print("Recording is on for this session; the viewer is starting (no restart needed).")
     print("Authorship protocol, in effect from now on in this session:")

@@ -25,7 +25,7 @@ from redact import redact  # noqa: E402
 FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 READ_TOOLS = ("Read", "Grep", "Glob")
 PROTECTED_SCRIPTS = ("ledger.py", "anchor.py", "viewer.py")
-CLI_HUMAN_ONLY = ("note", "seal", "open", "install", "review", "confirm", "consent", "restart", "--test")
+CLI_HUMAN_ONLY = ("note", "seal", "open", "install", "review", "confirm", "consent", "restart", "--test", "--fix")
 STORE_NAMES = ("ledger.jsonl", "head.json", "state.json", "annotations.jsonl", "errors.log",
                "viewer.secret", "viewer.port", "index.sqlite")
 DEFAULT_VIEWER_PORT = 47291

@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "authorship": {
-      "command": "uv",
-      "args": ["run", "--quiet", "--script", "${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py"],
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py"],
       "env": {"AUTHORSHIP_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}"}
     }
   }

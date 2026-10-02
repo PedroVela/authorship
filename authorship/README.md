@@ -11,9 +11,10 @@ This is the reference. New here? Start with the [project README](../README.md): 
 ## Requirements
 
 - Claude Code 2.1.281 or later (plugin MCP servers)
-- `python3` 3.9 or later (hooks use the standard library only)
-- [`uv`](https://docs.astral.sh/uv/) for the MCP server (it fetches the pinned `mcp` package and a Python 3.10+ on first run)
-- Optional: `openssl` for RFC 3161 timestamps, [`ots`](https://github.com/opentimestamps/opentimestamps-client) for OpenTimestamps
+- `python3` 3.9 or later. Hooks, the lookup (MCP) server, the annotator and the viewer all use the standard library only.
+- Optional, set up by `authorship doctor --fix`:
+  - `openssl` for RFC 3161 timestamps (it comes with macOS and most Linux systems);
+  - [`ots`](https://github.com/opentimestamps/opentimestamps-client) for Bitcoin timestamps, installed in a private environment under `~/.local/share/authorship/ots` and linked as `~/.local/bin/ots`.
 
 ## Install
 
@@ -26,12 +27,7 @@ From GitHub, once (the repository is private, so your git credentials must reach
 
 Updates: `/plugin marketplace update authorship-dev`. To try a local checkout for one session instead: `claude --plugin-dir /path/to/authorship`.
 
-Then put your command on the PATH, in your own terminal:
-
-```bash
-python3 ~/.claude/plugins/cache/authorship-dev/authorship/*/scripts/cli.py install   # installed from GitHub
-python3 /path/to/checkout/authorship/scripts/cli.py install                            # or from a local checkout
-```
+`/authorship:init` installs your `authorship` command (`~/.local/bin/authorship`) and prints a setup check. To fix what it marks, run `~/.local/bin/authorship doctor --fix` once in your own terminal. To install only the command, by hand: `python3 <plugin>/scripts/cli.py install`.
 
 In a git repository that is not recording yet, Claude mentions `/authorship:init` once (set `AUTHORSHIP_HINT=0` to turn that off).
 
@@ -103,9 +99,10 @@ authorship seal             # anchor the current head now
 authorship open             # the viewer, with its session secret
 authorship classifier       # who labels the entries, where the text goes, how to change it (--test checks it)
 authorship restart          # restart the annotator and viewer, to pick up changed settings
+authorship doctor           # check every piece of the setup; --fix installs or starts what is missing
 ```
 
-`note`, `review`, `seal`, `open`, `restart` and `classifier --test` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
+`note`, `review`, `seal`, `open`, `restart`, `classifier --test` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 

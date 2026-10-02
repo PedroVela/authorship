@@ -82,7 +82,8 @@ def test_install_writes_a_working_wrapper(qr, tmp_path):
 def test_init_via_cli_and_hint(project):
     r = run_cli(["init"], cwd=project, AUTHORSHIP_NO_DAEMONS="1")
     assert r.returncode == 0 and os.path.isdir(os.path.join(project, ".authorship"))
-    assert "cli.py\" install" in r.stdout
+    assert "Installed your command" in r.stdout and "Setup check:" in r.stdout
+    assert os.path.exists(os.path.join(project, ".test-bin", "authorship"))
 
 
 # --- authorship review -------------------------------------------------------------------
@@ -173,3 +174,63 @@ def test_classifier_command_explains_setup(qr, monkeypatch):
 def test_restart_and_test_refuse_claude(qr, cmd):
     r = run_cli(cmd, cwd=qr.project, CLAUDECODE="1")
     assert r.returncode == 3 and "human-only" in r.stderr
+
+
+# --- doctor ---------------------------------------------------------------------------------------
+
+
+def test_doctor_reports_each_piece(qr, monkeypatch, tmp_path):
+    import io
+    monkeypatch.setenv("AUTHORSHIP_OTS_HOME", str(tmp_path / "ots"))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    checks = {c[1]: c for c in cli.doctor_checks(qr)}
+    assert checks["Python"][0] == "ok"
+    assert checks["authorship command"][0] == "fix" and checks["authorship command"][2] == "not installed"
+    assert checks["Bitcoin timestamps (OpenTimestamps)"][0] == "fix"
+    assert checks["Record"][0] == "ok" and "14 entries, intact" in checks["Record"][2]
+    assert checks["Protection rules"][0] == "todo"  # the fixture project never ran init
+    assert checks["Background annotator and viewer"][0] == "fix"
+    out = io.StringIO()
+    cli.print_checks(cli.doctor_checks(qr), out)
+    assert "doctor --fix installs ~/.local/bin/authorship" in out.getvalue()
+
+
+def test_doctor_fix_installs_command_path_ots_and_daemons(qr, monkeypatch, tmp_path):
+    import io
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setattr(ledger, "require_human", lambda what: None)  # the test runner runs under Claude Code
+    started = []
+    monkeypatch.setattr(ledger, "spawn_detached", lambda argv, env=None: started.append(os.path.basename(argv[1])))
+    monkeypatch.setattr(cli, "install_ots", lambda: str(tmp_path / "bin" / "ots"))
+    out = io.StringIO()
+    assert cli.cmd_doctor(["--fix", "--project", qr.project], stdout=out) == 0
+    text = out.getvalue()
+    assert os.path.exists(os.path.join(os.environ["AUTHORSHIP_BIN_DIR"], "authorship"))
+    assert cli.PATH_LINE in open(str(home / ".zshrc")).read() and "open a new terminal" in text
+    assert "fixed: started the annotator and the viewer" in text and started[:2] == ["annotator.py", "viewer.py"]
+    assert "fixed: " + str(tmp_path / "bin" / "ots") in text
+    cli.cmd_doctor(["--fix", "--project", qr.project], stdout=io.StringIO())
+    assert open(str(home / ".zshrc")).read().count(cli.PATH_LINE) == 1  # idempotent
+
+
+def test_doctor_fix_refuses_claude(qr):
+    r = run_cli(["doctor", "--fix"], cwd=qr.project, CLAUDECODE="1")
+    assert r.returncode == 3 and "human-only" in r.stderr
+    r = run_cli(["doctor"], cwd=qr.project, CLAUDECODE="1")
+    assert r.returncode == 0 and "authorship doctor" in r.stdout
+
+
+def test_anchor_finds_ots_outside_the_path(monkeypatch, tmp_path):
+    import anchor
+    b = tmp_path / "bin"
+    b.mkdir()
+    f = b / "ots"
+    f.write_text("#!/bin/sh\n")
+    f.chmod(0o755)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("AUTHORSHIP_BIN_DIR", str(b))
+    assert anchor.ots_bin() == str(f)
