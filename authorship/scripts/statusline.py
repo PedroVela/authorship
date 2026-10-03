@@ -54,6 +54,11 @@ def line(project):
 
 
 def main():
+    if os.name == "nt":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # the legacy code page has no ✓
+        except (AttributeError, ValueError):
+            pass
     project = os.environ.get("AUTHORSHIP_PROJECT_DIR") or project_from_stdin() or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     try:
         sys.stdout.write(line(project))

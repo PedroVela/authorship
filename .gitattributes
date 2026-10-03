@@ -1,0 +1,2 @@
+# Shell scripts run through sh, also on Windows (Git Bash): CRLF would break them
+*.sh text eol=lf

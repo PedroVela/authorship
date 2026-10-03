@@ -296,8 +296,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, f.read(), STATIC_TYPES.get(os.path.splitext(full)[1], "application/octet-stream"))
 
     # POST
+    def _drain(self):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if 0 < n <= MAX_BODY:
+                self.rfile.read(n)
+        except (ValueError, OSError):
+            pass
+
     def do_POST(self):
         if not self._host_ok():
+            self._drain()
             return self._json(403, {"error": "foreign Host header"})
         if self.path.split("?", 1)[0] != "/api/confirm":
             return self._json(404, {"error": "not found"})
@@ -307,6 +316,7 @@ class Handler(BaseHTTPRequestHandler):
         secret_ok = hmac.compare_digest(given.encode(), self.server.secret.encode())
         ctype_ok = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() == "application/json"
         if not (origin_ok and secret_ok and ctype_ok):
+            self._drain()  # an unread body makes Windows reset the connection before the 403 arrives
             return self._json(403, {"error": "forbidden"})
         try:
             n = int(self.headers.get("Content-Length") or 0)
