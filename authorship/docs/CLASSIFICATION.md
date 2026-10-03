@@ -29,26 +29,30 @@ Each request carries:
 
 ## Backends
 
-| | Claude (default) | Jev |
-|---|---|---|
-| When it is used | Always, unless a Jev key is set | When `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set |
-| Setup | None: it uses the `claude` command and the login you already have | A key from [TypeSafe](https://docs.typesafe.ai/), [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) or the Vercel AI Gateway |
-| Who receives the text | Anthropic, which already receives it during the session | TypeSafe, plus OpenRouter or Vercel when you go through them: parties that did not have it before |
-| Confidence values | Stated by the model | Measured probabilities, with the full vector stored |
-| Speed and cost (golden 7-entry session) | ~16 s, ~US$0.026 (Sonnet) | One call per entry; about $0.042 per million input tokens |
-| Free-text summary | Yes | No |
+| | Claude (default) | OpenRouter (any model) | Jev |
+|---|---|---|---|
+| When it is used | Always, unless another is chosen or a Jev key is set | When chosen: `authorship classifier use openrouter MODEL` | When chosen, or when `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set and nothing is chosen |
+| Setup | None: it uses the `claude` command and the login you already have | `OPENROUTER_API_KEY` | A key from [TypeSafe](https://docs.typesafe.ai/), [OpenRouter](https://openrouter.ai/keys) or the Vercel AI Gateway |
+| Who receives the text | Anthropic, which already receives it during the session | OpenRouter and the model's provider: parties that did not have it before | TypeSafe, plus OpenRouter or Vercel when you go through them: parties that did not have it before |
+| Confidence values | Stated by the model | Stated by the model | Measured probabilities, with the full vector stored |
+| Speed and cost (golden 7-entry session) | ~16 s, ~US$0.026 (Sonnet) | Depends on the model | One call per entry; about $0.042 per million input tokens |
+| Free-text summary | Yes | Yes | No |
 
-Force one with `AUTHORSHIP_AUTO_BACKEND=claude` or `AUTHORSHIP_AUTO_BACKEND=jev`. Turn classification off with `AUTHORSHIP_AUTO=0`; tags and the rules below still work.
+Choose one with `authorship classifier use claude|openrouter|jev` (see [Setting it up](#setting-it-up)). Turn classification off with `authorship classifier use off`; tags and the rules below still work.
 
 ### Claude backend
 
-It runs `claude -p` with `claude-sonnet-5` by default (`AUTHORSHIP_AUTO_MODEL` changes it), with structured JSON output, and with everything else turned off:
+It runs `claude -p` with `claude-sonnet-5` by default (`authorship classifier use claude MODEL` changes it), with structured JSON output, and with everything else turned off:
 
 - no tools, hooks, MCP servers, CLAUDE.md files or memory;
 - no thinking (`MAX_THINKING_TOKENS=0`), no saved session;
 - started from a scratch directory outside the project.
 
 So it cannot read or change the project, and it is not recorded in the ledger. Sonnet was chosen over Haiku because it classified the golden session the same way across repeated runs, where Haiku did not.
+
+### OpenRouter backend
+
+The same system prompt and JSON schema as the Claude backend, sent to OpenRouter's chat completions API with strict structured output. Any model that supports structured output works; `authorship classifier models openrouter [FILTER]` lists them with their input price. The plugin asks for zero-data-retention endpoints, no data collection, and only providers that support every parameter it sends. The model OpenRouter reports, and the cost, are stored with each answer.
 
 ### Jev backend
 
@@ -62,13 +66,13 @@ Jev is the same model through three providers. They differ in who bills you and 
 | OpenRouter | `OPENROUTER_API_KEY` | `POST https://openrouter.ai/api/alpha/decisions` | Model `typesafe/jev-1.13`, answered by a dated snapshot, which is stored. The plugin asks for zero-data-retention endpoints only, no data collection, and no fallback provider. Billed to your OpenRouter account. |
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `POST https://ai-gateway.vercel.sh/v1/evaluate` | Asked for zero data retention. Cannot pin a Jev version, so the version that answered is stored. |
 
-With several keys set, the first in that order is used; `AUTHORSHIP_JEV_PROVIDER=typesafe|openrouter|vercel_gateway` picks one.
+With several keys set, the first in that order is used; `authorship classifier use jev --provider typesafe|openrouter|vercel_gateway` picks one. `authorship classifier use jev MODEL` pins another Jev version; a `typesafe/...` id goes to OpenRouter unchanged.
 
 Setting the key is the decision to send entry text to that provider; there is no extra prompt. See [LEGAL-NOTES](LEGAL-NOTES.md#keep-it-private).
 
 ## Setting it up
 
-Settings are environment variables. The annotator reads them when it starts, and it keeps running across sessions, so **after any change run `authorship restart`**. Run every command below in your own terminal, not inside Claude Code.
+`authorship classifier use` saves the choice in `~/.config/authorship/classifier.json`, for every project. Environment variables, where set, win over it. The annotator reads both when it starts, and it keeps running across sessions, so **after any change run `authorship restart`**. Run every command below in your own terminal, not inside Claude Code: `classifier use` refuses to run from it.
 
 **See what is in use:**
 
@@ -82,9 +86,22 @@ The viewer shows the same, in a strip under the tiles on Overview and on Review.
 **Claude (default).** Nothing to set up; it needs the `claude` command on the PATH. To pick another model:
 
 ```bash
-export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001   # default: claude-sonnet-5
+authorship classifier models claude       # sonnet, opus, haiku, or any id `claude --model` accepts
+authorship classifier use claude haiku    # default: claude-sonnet-5
 authorship restart
 ```
+
+**Any model through OpenRouter.**
+
+1. Put `export OPENROUTER_API_KEY=your-key` in your shell profile and open a new terminal.
+2. Pick a model:
+
+   ```bash
+   authorship classifier models openrouter gemini           # models with structured output, filtered
+   authorship classifier use openrouter google/gemini-3.8-flash
+   authorship restart
+   authorship classifier --test
+   ```
 
 **Jev.**
 
@@ -96,18 +113,20 @@ authorship restart
                                          # or: export AI_GATEWAY_API_KEY=your-key
    ```
 
-3. Open a new terminal and run `authorship restart`.
+3. Open a new terminal and run `authorship classifier use jev` (optionally `--provider openrouter`, or a model), then `authorship restart`.
 4. Check it with `authorship classifier --test`.
 
-With Jev, the text of your entries goes to that provider. Decide that with your attorney before filing.
+With Jev or OpenRouter, the text of your entries goes to that provider. Decide that with your attorney before filing.
 
 **Other switches:**
 
 ```bash
-export AUTHORSHIP_AUTO_BACKEND=claude   # or jev: force one even when a Jev key is set
-export AUTHORSHIP_AUTO=0                # no automatic labels; typed tags and the rules keep working
-authorship restart                      # after any of these
+authorship classifier use off    # no automatic labels; typed tags and the rules keep working
+authorship classifier use auto   # forget the choice: Jev if a Jev key is set, else Claude
+authorship restart               # after any of these
 ```
+
+The same settings as environment variables, which win over the saved choice: `AUTHORSHIP_AUTO_BACKEND` (`claude`, `openrouter`, `jev`), `AUTHORSHIP_AUTO_MODEL` (Claude or OpenRouter model), `AUTHORSHIP_JEV_PROVIDER`, `AUTHORSHIP_JEV_MODEL`, and `AUTHORSHIP_AUTO=0`.
 
 ## From answers to labels
 
@@ -162,7 +181,7 @@ These run offline, always, whatever the backend:
 
 `authorship classifier` (and the strip in the viewer) says why:
 
-- `off`: `AUTHORSHIP_AUTO=0`.
+- `off`: `AUTHORSHIP_AUTO=0`, or `authorship classifier use off`.
 - `no-backend`: no Jev key and no `claude` command on the PATH.
 - `error`: the backend failed (network, rate limit); details in `.authorship/errors.log`. Nothing is lost: unclassified entries are retried the next time the ledger changes.
 

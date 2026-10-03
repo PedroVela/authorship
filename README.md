@@ -112,12 +112,17 @@ By default the classifier is Claude itself, run in the background through the `c
 
 If you set a [Jev](https://docs.typesafe.ai/) key, Jev is used instead. The key can come from TypeSafe, the maker (`TYPESAFE_API_KEY`); from [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) (`OPENROUTER_API_KEY`); or from the Vercel AI Gateway (`AI_GATEWAY_API_KEY`). It is faster and cheaper, and returns measured probabilities. But it sends the text of your invention to a new party, so set the key only if that is acceptable before filing.
 
-To switch to Jev:
+You can also use any model on [OpenRouter](https://openrouter.ai/models) that answers in structured JSON, with the same prompt as Claude. That also sends the text to a new party.
+
+To switch, in your own terminal:
 
 ```bash
-echo 'export TYPESAFE_API_KEY=your-key' >> ~/.zshrc   # or OPENROUTER_API_KEY / AI_GATEWAY_API_KEY; open a new terminal
-authorship restart                                    # the annotator picks up the new settings
-authorship classifier --test                          # confirms which backend answers
+authorship classifier use claude haiku                          # another Claude model
+authorship classifier models openrouter gemini                  # list OpenRouter models, filtered
+authorship classifier use openrouter google/gemini-3.8-flash    # needs OPENROUTER_API_KEY in your shell profile
+authorship classifier use jev --provider openrouter             # Jev; needs a Jev key
+authorship restart                                              # the annotator picks up the new settings
+authorship classifier --test                                    # confirms which backend answers
 ```
 
 `authorship classifier` shows what is in use at any time, and so does the viewer, in a strip on Overview and Review with a **How to change it** link.
@@ -354,7 +359,7 @@ Hashes differ in each run; `tests/validate_citations.py` checks that every one r
 | The classifier read an entry wrong | Type the right tag next time, or run `authorship review --all` and reject or edit the label. |
 | Anything else | Hook errors are logged in `.authorship/errors.log`; they never interrupt your session. |
 
-To pause recording: `claude plugin disable authorship@authorship-dev` (the ledger stays; the pause shows up as a gap). To keep recording but stop the classifier: `export AUTHORSHIP_AUTO=0`. To stop suggesting `/authorship:init` in other repositories: `export AUTHORSHIP_HINT=0`.
+To pause recording: `claude plugin disable authorship@authorship-dev` (the ledger stays; the pause shows up as a gap). To keep recording but stop the classifier: `authorship classifier use off`. To stop suggesting `/authorship:init` in other repositories: `export AUTHORSHIP_HINT=0`.
 
 ## More
 

@@ -160,10 +160,13 @@ class FakeProvider(object):
         return a, self.model
 
 
-def default_provider():
-    """AUTHORSHIP_JEV_PROVIDER when set; otherwise whichever key is present: TypeSafe, then OpenRouter,
+PROVIDERS = ("typesafe", "openrouter", "vercel_gateway")
+
+
+def default_provider(name=None):
+    """`name`, else AUTHORSHIP_JEV_PROVIDER; otherwise whichever key is present: TypeSafe, then OpenRouter,
     then the Vercel AI Gateway."""
-    name = os.environ.get("AUTHORSHIP_JEV_PROVIDER")
+    name = name or os.environ.get("AUTHORSHIP_JEV_PROVIDER")
     if not name:
         name = "typesafe"
         for env_key, provider in (("TYPESAFE_API_KEY", "typesafe"), ("OPENROUTER_API_KEY", "openrouter"),

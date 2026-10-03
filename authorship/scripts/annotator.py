@@ -477,7 +477,9 @@ def run_tier1(store, entries, anns, provider=None, cfg=None):
 
 
 def auto_enabled():
-    return os.environ.get("AUTHORSHIP_AUTO", "1") != "0"
+    import classifier
+
+    return classifier.auto_enabled()
 
 
 def run_once(store, provider=None, cfg=None, blob_cache=None, classifier=None):

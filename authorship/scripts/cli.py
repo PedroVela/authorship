@@ -12,6 +12,14 @@
     authorship open                 open the viewer in the browser
     authorship classifier [--test]  who labels the entries, where the text goes, how to change it
                                     (--test sends one made-up sentence to check the setup)
+    authorship classifier use claude [MODEL]
+    authorship classifier use openrouter [MODEL]
+    authorship classifier use jev [MODEL] [--provider typesafe|openrouter|vercel_gateway]
+    authorship classifier use off | auto
+                                    choose who labels the entries (saved for every project;
+                                    environment variables still win). `auto` forgets the choice.
+    authorship classifier models [claude|openrouter|jev] [FILTER]
+                                    models to choose from (openrouter: those with structured output)
     authorship restart              restart the annotator and viewer with this terminal's settings
     authorship install [--bin-dir DIR]   put `authorship` on your PATH (~/.local/bin)
     authorship doctor [--fix]       check every piece; --fix installs what is missing
@@ -127,7 +135,9 @@ def cmd_status(store, args):
 
     res = annotator.run_once(store)  # classify what is new, refresh the cached chain status and review count
     print(status_line(store))
-    why = {"on": "on", "off": "off (AUTHORSHIP_AUTO=0)", "no-backend": "not running: no Jev key and no `claude` command",
+    import classifier
+
+    why = {"on": "on", "off": classifier.off_reason(), "no-backend": "not running: no Jev key and no `claude` command",
            "error": "failed this time; see .authorship/errors.log (it retries on the next change)"}
     import classifier
 
@@ -291,21 +301,118 @@ def cmd_review(store, args, stdin=None, stdout=None):
     return 0
 
 
-SETUP = """How to choose the classifier
-  Claude (default)  nothing to set up: it uses the `claude` command and your login.
-                    Model: export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001  (default claude-sonnet-5)
-  Jev               1. Get a key from one of: TypeSafe (https://docs.typesafe.ai), OpenRouter
-                       (https://openrouter.ai/keys, model typesafe/jev-1.13), or the Vercel AI Gateway.
-                    2. Add it to your shell profile (~/.zshrc or ~/.bashrc), so every session has it:
-                         export TYPESAFE_API_KEY=...      (TypeSafe)
-                         export OPENROUTER_API_KEY=...    (OpenRouter; asks for zero data retention)
-                         export AI_GATEWAY_API_KEY=...    (Vercel; asks for zero data retention)
-                       With more than one, TypeSafe wins, then OpenRouter; or set AUTHORSHIP_JEV_PROVIDER.
-                    3. Open a new terminal, then: authorship restart
-                    The text of your entries then goes to that provider: decide that before filing.
-  Force one         export AUTHORSHIP_AUTO_BACKEND=claude   (or jev)
-  Turn it off       export AUTHORSHIP_AUTO=0   (tags you type and the rules keep working)
+SETUP = """How to choose the classifier (in your own terminal; the choice is saved for every project)
+  Claude (default)  authorship classifier use claude [MODEL]
+                    Nothing else to set up: it uses the `claude` command and your login.
+                    MODEL: sonnet, opus, haiku or a full id (default claude-sonnet-5).
+  OpenRouter        authorship classifier use openrouter MODEL
+                    Any model with structured output: `authorship classifier models openrouter claude`
+                    lists them (default anthropic/claude-sonnet-5). Needs OPENROUTER_API_KEY.
+  Jev               authorship classifier use jev [MODEL] [--provider typesafe|openrouter|vercel_gateway]
+                    Needs a key from TypeSafe (https://docs.typesafe.ai), OpenRouter (https://openrouter.ai/keys)
+                    or the Vercel AI Gateway (default model jev-1.13.0).
+  Keys              Put the key in your shell profile (~/.zshrc or ~/.bashrc), so every session has it:
+                      export OPENROUTER_API_KEY=...    (OpenRouter; asks for zero data retention)
+                      export TYPESAFE_API_KEY=...      (TypeSafe)
+                      export AI_GATEWAY_API_KEY=...    (Vercel; asks for zero data retention)
+                    With OpenRouter or Jev, the text of your entries goes to that provider: decide that before filing.
+  Turn it off       authorship classifier use off   (tags you type and the rules keep working)
+  Forget the choice authorship classifier use auto  (Jev if a Jev key is set, else Claude)
+  Variables         AUTHORSHIP_AUTO_BACKEND, AUTHORSHIP_AUTO_MODEL, AUTHORSHIP_JEV_PROVIDER, AUTHORSHIP_JEV_MODEL
+                    and AUTHORSHIP_AUTO=0 override the saved choice.
 After any change: authorship restart  (the annotator keeps the settings it started with)."""
+
+CLAUDE_MODELS = [("sonnet", "the latest Sonnet"), ("opus", "the latest Opus"), ("haiku", "the latest Haiku, fastest"),
+                 ("claude-sonnet-5", "default")]
+
+
+def cmd_classifier_use(args, stdout=None):
+    """authorship classifier use claude|openrouter|jev|off|auto [MODEL] [--provider P]"""
+    import classifier
+    import jev_client
+
+    stdout = stdout or sys.stdout
+    ledger.require_human("authorship classifier use")
+    args = list(args)
+    provider = _pop_flag(args, "--provider")
+    backend = args[0] if args else None
+    model = args[1] if len(args) > 1 else None
+    if backend not in classifier.BACKENDS + ("auto",):
+        stdout.write("Usage: authorship classifier use claude|openrouter|jev|off|auto [MODEL] [--provider P]\n")
+        return 2
+    if provider and backend != "jev":
+        stdout.write("--provider applies to jev only\n")
+        return 2
+    if provider and provider not in jev_client.PROVIDERS:
+        stdout.write("Unknown provider %r: use %s\n" % (provider, ", ".join(jev_client.PROVIDERS)))
+        return 2
+    c = classifier.choice()
+    if backend == "auto":
+        c = {}
+    else:
+        c["backend"] = backend
+        if model:
+            c[{"claude": "claude_model", "openrouter": "openrouter_model", "jev": "jev_model"}.get(backend, "model")] = model
+        if provider:
+            c["jev_provider"] = provider
+    if backend == "openrouter" and model:
+        try:
+            ids = {m for m, _ in classifier.openrouter_models()}
+            if ids and model not in ids:
+                stdout.write("%s is not an OpenRouter model with structured output. "
+                             "See: authorship classifier models openrouter\n" % model)
+                return 2
+        except Exception as exc:  # offline: save it anyway
+            stdout.write("(could not check the model list: %s)\n" % exc)
+    path = classifier.save_choice(c)
+    stdout.write("Saved in %s\n" % path if c else "Choice cleared (%s removed)\n" % path)
+    for env in ("AUTHORSHIP_AUTO_BACKEND", "AUTHORSHIP_AUTO_MODEL", "AUTHORSHIP_JEV_PROVIDER", "AUTHORSHIP_JEV_MODEL",
+                "AUTHORSHIP_AUTO"):
+        if os.environ.get(env):
+            stdout.write("Note: %s=%s is set in this terminal and wins over the saved choice.\n" % (env, os.environ[env]))
+    try:
+        b = classifier.default_backend() if classifier.auto_enabled() else None
+        d = classifier.describe_backend(b)
+        stdout.write("Now: %s\n" % ("%s (%s); entry text goes to %s" % (d["label"], d.get("model"), d["sends_to"])
+                                      if b else classifier.off_reason() if not classifier.auto_enabled()
+                                      else "no backend available"))
+        if d.get("third_party"):
+            stdout.write("The text of your entries will go to a new party: decide that with your attorney before filing.\n")
+    except Exception as exc:
+        stdout.write("Not usable yet: %s\n" % exc)
+    stdout.write("Run `authorship restart` so the annotator picks it up; `authorship classifier --test` checks it.\n")
+    return 0
+
+
+def cmd_classifier_models(args, stdout=None):
+    """authorship classifier models [claude|openrouter|jev] [FILTER]"""
+    import classifier
+
+    stdout = stdout or sys.stdout
+    which = args[0] if args else "openrouter"
+    text = args[1] if len(args) > 1 else None
+    if which == "claude":
+        for m, note in CLAUDE_MODELS:
+            stdout.write("  %-22s %s\n" % (m, note))
+        stdout.write("Any model id that `claude --model` accepts works. Use: authorship classifier use claude MODEL\n")
+        return 0
+    if which == "jev":
+        stdout.write("  %-22s default (TypeSafe and Vercel; OpenRouter maps it to typesafe/jev-1.13)\n"
+                     % classifier.JEV_DEFAULT_MODEL)
+        stdout.write("A typesafe/... id is sent to OpenRouter unchanged. Use: authorship classifier use jev MODEL\n")
+        return 0
+    if which != "openrouter":
+        stdout.write("Usage: authorship classifier models [claude|openrouter|jev] [FILTER]\n")
+        return 2
+    try:
+        models = classifier.openrouter_models(text)
+    except Exception as exc:
+        stdout.write("Could not fetch the OpenRouter model list: %s\n" % exc)
+        return 1
+    for m, price in models:
+        stdout.write("  %-48s %s\n" % (m, "$%.2f / M input tokens" % price if price is not None else ""))
+    stdout.write("%d model(s) with structured output. Use: authorship classifier use openrouter MODEL\n" % len(models))
+    return 0
 
 
 def cmd_classifier(store, args, stdout=None):
@@ -318,8 +425,8 @@ def cmd_classifier(store, args, stdout=None):
     running = index._meta(conn, "classifier") or {}
     labeled = conn.execute("SELECT COUNT(*) FROM annotations WHERE method='auto'").fetchone()[0]
     conn.close()
-    if os.environ.get("AUTHORSHIP_AUTO", "1") == "0":
-        here, here_err = None, "off (AUTHORSHIP_AUTO=0)"
+    if not classifier.auto_enabled():
+        here, here_err = None, classifier.off_reason()
     else:
         try:
             here, here_err = classifier.default_backend(), None
@@ -335,7 +442,7 @@ def cmd_classifier(store, args, stdout=None):
         return "%s%s; entry text goes to %s" % (d.get("label"), " (%s)" % d["model"] if d.get("model") else "", d.get("sends_to"))
 
     stdout.write("Running annotator: %s\n" % (
-        line(running) or {"off": "off (AUTHORSHIP_AUTO=0)", "no-backend": "not classifying: no backend",
+        line(running) or {"off": "off", "no-backend": "not classifying: no backend",
                           "error": "failed last time: %s" % running.get("error")}.get(running.get("state"), "not seen yet")))
     if running.get("state") == "error" and running.get("backend"):
         stdout.write("  last run failed: %s\n" % running.get("error"))
@@ -515,10 +622,11 @@ def doctor_checks(store=None):
     else:
         out.append(("ok", "authorship command", wrapper, ""))
     try:
-        b = classifier.default_backend() if os.environ.get("AUTHORSHIP_AUTO", "1") != "0" else None
+        b = classifier.default_backend() if classifier.auto_enabled() else None
         d = classifier.describe_backend(b)
-        if os.environ.get("AUTHORSHIP_AUTO", "1") == "0":
-            out.append(("info", "Classifier", "off (AUTHORSHIP_AUTO=0)", "unset AUTHORSHIP_AUTO to label entries automatically"))
+        if not classifier.auto_enabled():
+            out.append(("info", "Classifier", classifier.off_reason(),
+                        "`authorship classifier use auto` (and unset AUTHORSHIP_AUTO) to label entries automatically"))
         elif b is None:
             out.append(("todo", "Classifier", "no `claude` command and no Jev key", "install Claude Code, or set a Jev key"))
         else:
@@ -615,6 +723,10 @@ def main(argv):
         return cmd_doctor(rest)
     if cmd == "init":
         return cmd_init(rest)
+    if cmd == "classifier" and rest[:1] == ["use"]:  # no project needed
+        return cmd_classifier_use(rest[1:])
+    if cmd == "classifier" and rest[:1] == ["models"]:
+        return cmd_classifier_models(rest[1:])
     if cmd not in COMMANDS:
         sys.stderr.write("authorship: unknown command %r (see `authorship help`)\n" % cmd)
         return 2

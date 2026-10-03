@@ -349,3 +349,78 @@ def test_status_explains_the_classifier(untagged, capsys, monkeypatch):
     monkeypatch.chdir(untagged.project)
     cli.main(["status"])
     assert "classifier: off (AUTHORSHIP_AUTO=0)" in capsys.readouterr().out
+
+
+def test_saved_choice_selects_backend_and_model(monkeypatch):
+    for k in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("AUTHORSHIP_CLAUDE_BIN", sys.executable)
+    clf.save_choice({"backend": "claude", "claude_model": "haiku"})
+    b = clf.default_backend()
+    assert isinstance(b, clf.ClaudeCLI) and b.model == "haiku"
+    monkeypatch.setenv("AUTHORSHIP_AUTO_MODEL", "opus")  # the environment wins
+    assert clf.default_backend().model == "opus"
+    monkeypatch.delenv("AUTHORSHIP_AUTO_MODEL")
+    # a Jev key does not override an explicit choice of Claude
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    assert isinstance(clf.default_backend(), clf.ClaudeCLI)
+    # OpenRouter as a plain LLM provider, any model
+    clf.save_choice({"backend": "openrouter", "openrouter_model": "google/gemini-3.8-flash"})
+    with pytest.raises(clf.ClassifierError):
+        clf.default_backend()  # no OPENROUTER_API_KEY yet
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    b = clf.default_backend()
+    d = clf.describe_backend(b)
+    assert isinstance(b, clf.OpenRouterLLM) and b.model == "google/gemini-3.8-flash"
+    assert d["third_party"] and "gemini" in d["sends_to"]
+    # Jev: provider and model
+    clf.save_choice({"backend": "jev", "jev_provider": "openrouter", "jev_model": "typesafe/jev-latest"})
+    b = clf.default_backend()
+    assert isinstance(b, clf.JevBackend) and b.provider.name == "openrouter" and b.model == "typesafe/jev-latest"
+    monkeypatch.setenv("AUTHORSHIP_JEV_MODEL", "jev-1.14.0")
+    assert clf.default_backend().model == "jev-1.14.0"
+    # off
+    monkeypatch.delenv("AUTHORSHIP_AUTO")
+    clf.save_choice({"backend": "off"})
+    assert not clf.auto_enabled() and not annotator.auto_enabled()
+    monkeypatch.setenv("AUTHORSHIP_AUTO", "1")
+    assert clf.auto_enabled()
+    clf.save_choice({})
+    assert clf.choice() == {}
+
+
+def test_openrouter_llm_sends_strict_schema_and_parses(untagged, monkeypatch):
+    import jev_client
+    sent = {}
+
+    def fake_post(url, key, body, timeout=30):
+        sent.update(url=url, key=key, body=body)
+        payload = json.loads(body["messages"][1]["content"])
+        out = [{"seq": e["seq"], "kind": "idea" if e["who"] == "human" else "ai", "kind_confidence": 0.9,
+                "new_element": 0.9, "stance": "originates", "stance_confidence": 0.9, "target": "none",
+                "target_confidence": 0, "builds_on": [], "maturity": "approach", "maturity_confidence": 0.8,
+                "ai_act": "explains", "ai_act_confidence": 0.9, "new_stage": "", "summary": "x"} for e in payload["entries"]]
+        return {"model": "google/gemini-3.8-flash", "usage": {"cost": 0.0001},
+                "choices": [{"message": {"content": json.dumps({"entries": out})}}]}
+
+    monkeypatch.setattr(jev_client, "_post", fake_post)
+    b = clf.OpenRouterLLM(model="google/gemini-3.8-flash", key="k")
+    res = annotator.run_once(untagged, classifier=b)
+    assert res["auto_state"] == "on" and res["auto"] == 7
+    body = sent["body"]
+    assert sent["url"].endswith("/chat/completions") and body["model"] == "google/gemini-3.8-flash"
+    assert body["provider"] == {"zdr": True, "data_collection": "deny", "require_parameters": True}
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert body["response_format"]["json_schema"]["strict"] and schema["additionalProperties"] is False
+    assert schema["properties"]["entries"]["items"]["additionalProperties"] is False
+    assert body["messages"][0]["content"] == clf.SYSTEM_PROMPT
+
+
+def test_openrouter_model_list_keeps_structured_output_models():
+    data = {"data": [
+        {"id": "anthropic/claude-sonnet-5", "supported_parameters": ["structured_outputs"], "pricing": {"prompt": "0.000002"}},
+        {"id": "anthropic/claude-sonnet-5:batch", "supported_parameters": ["structured_outputs"], "pricing": {"prompt": "0.000001"}},
+        {"id": "some/model-without-json", "supported_parameters": ["tools"], "pricing": {"prompt": "0"}},
+        {"id": "typesafe/jev-router", "supported_parameters": ["structured_outputs"], "pricing": {"prompt": "-1"}}]}
+    assert clf.openrouter_models(fetch=lambda: data) == [("anthropic/claude-sonnet-5", 2.0), ("typesafe/jev-router", None)]
+    assert clf.openrouter_models("claude", fetch=lambda: data) == [("anthropic/claude-sonnet-5", 2.0)]

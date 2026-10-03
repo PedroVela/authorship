@@ -14,6 +14,9 @@ def _no_live_classifier(monkeypatch, tmp_path):
     monkeypatch.setenv("AUTHORSHIP_AUTO", "0")
     monkeypatch.setenv("AUTHORSHIP_HINT", "0")
     monkeypatch.setenv("AUTHORSHIP_BIN_DIR", str(tmp_path / "bin"))  # never write to the real ~/.local/bin
+    monkeypatch.setenv("AUTHORSHIP_CONFIG", str(tmp_path / "classifier.json"))  # never read the real saved choice
+    for k in ("AUTHORSHIP_AUTO_BACKEND", "AUTHORSHIP_AUTO_MODEL", "AUTHORSHIP_JEV_PROVIDER", "AUTHORSHIP_JEV_MODEL"):
+        monkeypatch.delenv(k, raising=False)
 
 
 @pytest.fixture

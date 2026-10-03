@@ -98,3 +98,4 @@ The spec makes Tier 0 depend on tags the human types, and keeps Tier 1 (Jev) opt
 ## Process
 
 27. Phases 4 (viewer) and 5 (skills, anchoring, status line) were built in parallel, each against its own acceptance tests, and the full suite was run before each commit.
+41. **The classifier is chosen with a command, and OpenRouter can serve any model.** Choosing a backend or model took environment variables in the shell profile. `authorship classifier use claude|openrouter|jev|off|auto [MODEL] [--provider P]` (human-only) saves the choice in `~/.config/authorship/classifier.json`; the variables still win over it. A third backend sends the same prompt and schema as the Claude one to any OpenRouter model with structured output, asking for zero data retention. `authorship classifier models` lists the choices. The Jev version can be set too (`AUTHORSHIP_JEV_MODEL`).
