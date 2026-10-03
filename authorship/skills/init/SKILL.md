@@ -2,13 +2,13 @@
 name: init
 description: Set up authorship recording in this project. Creates .authorship/, adds the permission rules that keep Claude away from the evidence, and updates .gitignore. Use when the user asks to start recording authorship or inventorship evidence.
 disable-model-invocation: true
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py*)
+allowed-tools: Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/py.sh init_project.py*)
 ---
 
 Run this command and show the user its output verbatim:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py --project "${CLAUDE_PROJECT_DIR}"
+sh ${CLAUDE_PLUGIN_ROOT}/scripts/py.sh init_project.py --project "${CLAUDE_PROJECT_DIR}"
 ```
 
 Then tell the user, in a few short lines:

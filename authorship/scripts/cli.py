@@ -515,7 +515,7 @@ if [ -z "$CLI" ] || [ ! -f "$CLI" ]; then
   echo "authorship: plugin not found; reinstall the plugin, then run its scripts/cli.py install" >&2
   exit 1
 fi
-exec python3 "$CLI" "$@"
+exec sh "$(dirname "$CLI")/py.sh" cli.py "$@"
 """
 
 

@@ -2,7 +2,7 @@
 name: disclosure
 description: Draft an invention disclosure for the attorney from the authorship ledger, with every element cited to a ledger entry and its origin (human, AI or mixed) stated plainly. Use when the user asks for a disclosure, an invention write-up, or a summary of what they invented.
 argument-hint: "[claim seq]"
-allowed-tools: Bash(python3 ${CLAUDE_PLUGIN_ROOT}/scripts/drafts.py*), Bash(python3 ${CLAUDE_PLUGIN_ROOT}/tests/validate_citations.py*), Read, Edit(authorship-exports/**), mcp__plugin_authorship_authorship__*
+allowed-tools: Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/py.sh drafts.py*), Bash(sh ${CLAUDE_PLUGIN_ROOT}/scripts/py.sh ../tests/validate_citations.py*), Read, Edit(authorship-exports/**), mcp__plugin_authorship_authorship__*
 ---
 
 Draft `authorship-exports/<date>-disclosure.md` for attorney review.
@@ -10,7 +10,7 @@ Draft `authorship-exports/<date>-disclosure.md` for attorney review.
 1. Generate the deterministic first draft (it quotes human text verbatim and cites every item):
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/drafts.py disclosure --project "${CLAUDE_PROJECT_DIR}" $ARGUMENTS
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/py.sh drafts.py disclosure --project "${CLAUDE_PROJECT_DIR}" $ARGUMENTS
    ```
 
    Pass `--claim <seq>` when the user named a claim.
@@ -28,7 +28,7 @@ Draft `authorship-exports/<date>-disclosure.md` for attorney review.
 4. Validate, fix any error it reports, and re-run until it passes:
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/tests/validate_citations.py authorship-exports/<file>.md --project "${CLAUDE_PROJECT_DIR}"
+   sh ${CLAUDE_PLUGIN_ROOT}/scripts/py.sh ../tests/validate_citations.py authorship-exports/<file>.md --project "${CLAUDE_PROJECT_DIR}"
    ```
 
 5. Tell the user the path, how many citations were checked, and which elements are AI-originated or mixed. Remind them it is a draft for their attorney.

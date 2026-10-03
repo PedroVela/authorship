@@ -1,9 +1,13 @@
 #!/bin/sh
-# Runs a plugin script with the first Python 3 found: python3, python, or the Windows launcher (py -3).
+# Runs a plugin script with AUTHORSHIP_PYTHON when set, else the first Python 3 found: python3, python,
+# or the Windows launcher (py -3).
 # Usage: sh py.sh <script.py> [args...]   (the script is looked up next to this file)
 d=$(dirname "$0")
 s=$1
 shift
+if [ -n "$AUTHORSHIP_PYTHON" ]; then
+  exec "$AUTHORSHIP_PYTHON" "$d/$s" "$@"
+fi
 for p in python3 python; do
   c=$(command -v "$p" 2>/dev/null) || continue
   case "$c" in *WindowsApps*) continue ;; esac  # the Microsoft Store stub, which opens the Store instead
