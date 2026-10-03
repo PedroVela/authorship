@@ -12,13 +12,14 @@ This is the reference. New here? Start with the [project README](../README.md): 
 
 - Claude Code 2.1.281 or later (plugin MCP servers)
 - `python3` 3.9 or later. Hooks, the lookup (MCP) server, the annotator and the viewer all use the standard library only.
+- macOS, Linux or Windows. On Windows, hooks find Python as `python3`, `python` or `py -3`; the skills and the lookup server call `python3`, which the Microsoft Store Python provides. `openssl` comes with Git for Windows.
 - Optional, set up by `authorship doctor --fix`:
   - `openssl` for RFC 3161 timestamps (it comes with macOS and most Linux systems);
   - [`ots`](https://github.com/opentimestamps/opentimestamps-client) for Bitcoin timestamps, installed in a private environment under `~/.local/share/authorship/ots` and linked as `~/.local/bin/ots`.
 
 ## Install
 
-From GitHub, once (the repository is private, so your git credentials must reach it):
+From GitHub, once:
 
 ```text
 /plugin marketplace add PedroVela/authorship
