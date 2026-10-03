@@ -67,7 +67,10 @@ def merge_gitignore(path):
 
 
 def statusline_snippet():
-    cmd = 'python3 "%s"' % os.path.join(ledger.SCRIPTS_DIR, "statusline.py")
+    if os.name == "nt":
+        cmd = 'sh "%s" statusline.py' % os.path.join(ledger.SCRIPTS_DIR, "py.sh").replace(os.sep, "/")
+    else:
+        cmd = 'python3 "%s"' % os.path.join(ledger.SCRIPTS_DIR, "statusline.py")
     return json.dumps({"statusLine": {"type": "command", "command": cmd, "padding": 0}}, indent=2)
 
 
@@ -103,6 +106,34 @@ def setup_command():
         return None, False
 
 
+def python3_works():
+    import shutil
+    import subprocess
+
+    exe = shutil.which("python3")
+    if not exe or "WindowsApps" in exe:  # the Microsoft Store stub
+        return False
+    try:
+        return subprocess.run([exe, "-c", "import sys; sys.exit(sys.version_info[0] != 3)"], capture_output=True,
+                              timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def remember_python():
+    """On Windows without a working `python3`, save this interpreter as AUTHORSHIP_PYTHON (user environment),
+    which the lookup (MCP) server's command uses. Returns the path saved, or None."""
+    import subprocess
+
+    if os.name != "nt" or os.environ.get("AUTHORSHIP_PYTHON") or python3_works():
+        return None
+    try:
+        subprocess.run(["setx", "AUTHORSHIP_PYTHON", sys.executable], capture_output=True, timeout=30, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return sys.executable
+
+
 def main(argv):
     as_json = "--json" in argv
     project = ledger.project_dir()
@@ -111,6 +142,7 @@ def main(argv):
     res = init(project)
     res["protocol"] = activate(project)
     res["command"], res["command_on_path"] = setup_command()
+    res["python_saved"] = remember_python()
     if as_json:
         print(json.dumps(res))
         return 0
@@ -132,6 +164,10 @@ def main(argv):
     print()
     print("Keep this repository private: public disclosure before filing can destroy novelty.")
     print()
+    if res["python_saved"]:
+        print("Windows has no `python3` here: saved AUTHORSHIP_PYTHON=%s in your user environment." % res["python_saved"])
+        print("Restart Claude Code once so the lookup (MCP) server starts with it. Recording works already.")
+        print()
     import cli
 
     if res["command"] and res["command_on_path"]:

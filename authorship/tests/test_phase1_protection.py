@@ -49,6 +49,9 @@ CASES = [
     (B, "Bash", {"command": PY % "ledger.py note '#idea I invented it'"}),
     (B, "Bash", {"command": PY % "ledger.py confirm --target-seq 1 --decision accept"}),
     (B, "Bash", {"command": PY % "anchor.py"}),
+    (B, "Bash", {"command": "sh %s/py.sh ledger.py note '#idea mine'" % SCRIPTS.replace(os.sep, "/")}),
+    (B, "Bash", {"command": "sh %s/py.sh anchor.py" % SCRIPTS.replace(os.sep, "/")}),
+    (B, "Bash", {"command": "sh %s/py.sh cli.py note x" % SCRIPTS.replace(os.sep, "/")}),
     (B, "Bash", {"command": "cd %s && python3 ledger.py anchor" % SCRIPTS}),
     (B, "Bash", {"command": PY % "viewer.py daemon"}),
     (B, "Bash", {"command": "authorship note '#idea mine, honestly'"}),
@@ -100,6 +103,8 @@ CASES = [
     (A, "Bash", {"command": "ls -la"}),
     (A, "Bash", {"command": "echo 'the authorship plugin'"}),
     (A, "Bash", {"command": PY % "anchor.py seal"}),
+    (A, "Bash", {"command": "sh %s/py.sh anchor.py seal" % SCRIPTS.replace(os.sep, "/")}),  # as the seal skill runs it
+    (A, "Bash", {"command": "sh %s/py.sh index.py review-queue" % SCRIPTS.replace(os.sep, "/")}),
     (A, "Bash", {"command": PY % "index.py --rebuild"}),
     (A, "Bash", {"command": PY % "init_project.py"}),
     (A, "Bash", {"command": "authorship log -n 5 && authorship status"}),

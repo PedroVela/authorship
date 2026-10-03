@@ -112,7 +112,7 @@ def test_twenty_kb_cap(project):
 def test_mcp_server_lists_exactly_seven_read_only_tools(qr_confirmed):
     """The server is standard-library Python, started exactly as .mcp.json starts it."""
     cfg = json.load(open(os.path.join(harness.PLUGIN, ".mcp.json")))["mcpServers"]["authorship"]
-    assert cfg["command"] == "python3" and cfg["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py"]
+    assert cfg["command"] == "${AUTHORSHIP_PYTHON:-python3}" and cfg["args"] == ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py"]
     env = harness.hook_env(qr_confirmed.project)
     proc = subprocess.Popen([sys.executable, os.path.join(SCRIPTS, "mcp_server.py")],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)

@@ -102,8 +102,9 @@ def test_skills_and_agent_frontmatter():
         fm = text.split("---")[1]
         assert re.search(r"^name: %s$" % name, fm, re.M) and re.search(r"^description: .{40,}", fm, re.M)
         assert "${CLAUDE_PLUGIN_ROOT}/scripts/" in text
+        assert "python3" not in text  # Windows has no python3 by default: skills go through py.sh
     seal = open(os.path.join(PLUGIN, "skills", "seal", "SKILL.md")).read()
-    assert "anchor.py seal" in seal
+    assert "py.sh anchor.py seal" in seal
     agent = open(os.path.join(PLUGIN, "agents", "inventorship-reviewer.md")).read().split("---")[1]
     assert "tools: mcp__plugin_authorship_authorship__*, Read, Write" in agent
 
