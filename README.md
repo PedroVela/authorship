@@ -58,7 +58,9 @@ If anything is marked `doctor --fix` (usually: `~/.local/bin` is not on your PAT
 
 It adds `~/.local/bin` to your shell profile, installs the OpenTimestamps client in a private environment, and starts anything that is not running. `authorship doctor` without `--fix` only checks, any time.
 
-Requirements: Claude Code 2.1.281+ and Python 3.9+ (on a Mac, `python3` comes with the Command Line Tools). Nothing else to install by hand.
+Requirements: Claude Code 2.1.281+ and Python 3.9+ (on a Mac, `python3` comes with the Command Line Tools). Runs on macOS, Linux and Windows. Nothing else to install by hand.
+
+License: [MIT](LICENSE).
 
 ## How you use it
 
