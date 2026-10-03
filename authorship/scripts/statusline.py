@@ -13,7 +13,7 @@ import sys
 
 def project_from_stdin():
     try:
-        data = json.loads(sys.stdin.read() or "{}")
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8") or "{}")
         ws = data.get("workspace") or {}
         return ws.get("project_dir") or ws.get("current_dir") or data.get("cwd")
     except Exception:

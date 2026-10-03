@@ -24,8 +24,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from redact import redact, redact_obj  # noqa: E402
 
 if os.name == "nt":
-    # Windows consoles default to a legacy code page that cannot print ✓ or ✗; every script imports this module
-    for _s in (sys.stdout, sys.stderr):
+    # Windows pipes and consoles default to a legacy code page (cp1252). Claude Code sends hook and MCP input as
+    # UTF-8, so reading it with the code page would store "dÃ³nde" for "dónde"; printing ✓ would crash. Every
+    # script imports this module.
+    for _s in (sys.stdin, sys.stdout, sys.stderr):
         try:
             _s.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
