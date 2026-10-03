@@ -99,11 +99,13 @@ authorship verify --anchors
 authorship seal             # anchor the current head now
 authorship open             # the viewer, with its session secret
 authorship classifier       # who labels the entries, where the text goes, how to change it (--test checks it)
+authorship classifier use openrouter google/gemini-3.8-flash   # or: use claude haiku | use jev | use off | use auto
+authorship classifier models openrouter [FILTER]               # models to choose from
 authorship restart          # restart the annotator and viewer, to pick up changed settings
 authorship doctor           # check every piece of the setup; --fix installs or starts what is missing
 ```
 
-`note`, `review`, `seal`, `open`, `restart`, `classifier --test` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
+`note`, `review`, `seal`, `open`, `restart`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 
@@ -134,7 +136,7 @@ On by default, as soon as the project is initialized. Full description: [docs/CL
 - **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. Jev takes over when `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set: faster, with measured probabilities, but a new party receives the text.
 - **Thresholds.** A label in your favor counts automatically from 0.80 and waits in `authorship review` between 0.50 and 0.80. A label against you (an AI-origin element) counts from 0.50.
 - **Where it goes.** Answers go to `annotations.jsonl`, with the backend, the model id, a prompt hash and every confidence. They never go to the ledger.
-- **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: set `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` in your shell profile for Jev, then run `authorship restart`. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
+- **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: `authorship classifier use claude|openrouter|jev [MODEL]`, then `authorship restart`. OpenRouter and Jev need their key in your shell profile. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
 - **Corrections.** A typed tag wins over the classifier. `authorship review --all` rejects or edits any automatic label, as a human `Confirm` entry.
 
 Deterministic rules run alongside it, offline:
@@ -155,8 +157,10 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_TSA` | `https://freetsa.org/tsr` | RFC 3161 authority; `off` to disable |
 | `AUTHORSHIP_OTS` | `1` | `0`: skip OpenTimestamps |
 | `AUTHORSHIP_AUTO` | `1` | `0`: no automatic classification (tags and rules still work) |
-| `AUTHORSHIP_AUTO_BACKEND` | chosen | `claude` or `jev`; by default Jev when a Jev key is set, else Claude |
-| `AUTHORSHIP_AUTO_MODEL` | `claude-sonnet-5` | Model for the Claude backend |
+| `AUTHORSHIP_AUTO_BACKEND` | saved choice | `claude`, `openrouter` or `jev`; with no choice, Jev when a Jev key is set, else Claude |
+| `AUTHORSHIP_AUTO_MODEL` | `claude-sonnet-5` / `anthropic/claude-sonnet-5` | Model for the Claude or OpenRouter backend |
+| `AUTHORSHIP_JEV_MODEL` | `jev-1.13.0` | Jev version |
+| `AUTHORSHIP_CONFIG` | `~/.config/authorship/classifier.json` | Where `authorship classifier use` saves the choice; these variables win over it |
 | `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Jev key (TypeSafe, OpenRouter, Vercel); setting one switches the classifier to Jev |
 | `AUTHORSHIP_JEV_PROVIDER` | by key | `typesafe`, `openrouter` or `vercel_gateway` (by default the first key found, in that order) |
 | `AUTHORSHIP_JEV` | unset | `1`: also run the spec's Tier 1 questions (calibration) |

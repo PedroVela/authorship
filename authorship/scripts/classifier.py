@@ -6,6 +6,10 @@ new technical element, which earlier element it builds on, modifies, accepts
 or rejects, and whether the work moved to a new stage. For each AI response
 it decides whether Claude introduced a mechanism nobody asked for.
 
+Backends: the local `claude` CLI (default), any OpenRouter model with
+structured output, or Jev. `authorship classifier use ...` saves the choice
+in a user file (see choice()); environment variables override it.
+
 The default backend is the local `claude` CLI in headless mode (Sonnet, no
 thinking, about 15 s for a 7-entry session): it uses the login Claude Code already has, and sends the text to
 the same provider the session already talks to, so nothing reaches a new
@@ -24,6 +28,11 @@ import subprocess
 import tempfile
 
 DEFAULT_MODEL = "claude-sonnet-5"  # consistent across runs; Haiku varied on the golden session
+OPENROUTER_DEFAULT_MODEL = "anthropic/claude-sonnet-5"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+JEV_DEFAULT_MODEL = "jev-1.13.0"
+BACKENDS = ("claude", "openrouter", "jev", "off")
 BATCH = 6
 KINDS = ["problem", "idea", "hypothesis", "decision", "claim", "discard", "instruction", "other"]
 AI_ACTS = ["implements_instruction", "offers_alternatives", "unprompted_mechanism", "explains", "asks"]
@@ -100,6 +109,60 @@ class ClassifierError(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# The saved choice: {"backend", "claude_model", "openrouter_model", "jev_provider", "jev_model"}
+
+def config_path():
+    return os.environ.get("AUTHORSHIP_CONFIG") or os.path.join(os.path.expanduser("~"), ".config", "authorship",
+                                                               "classifier.json")
+
+
+def choice():
+    try:
+        with open(config_path(), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_choice(d):
+    """Write the choice (an empty one removes the file). Returns the path."""
+    path = config_path()
+    if not d:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return path
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2, sort_keys=True)
+        f.write("\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return path
+
+
+def setting(env, key, default=None):
+    """An environment variable, else the saved choice, else the default."""
+    return os.environ.get(env) or choice().get(key) or default
+
+
+def auto_enabled():
+    """AUTHORSHIP_AUTO=0 turns automatic labels off, =1 on; unset, `classifier use off` turns them off."""
+    v = os.environ.get("AUTHORSHIP_AUTO")
+    if v is not None:
+        return v != "0"
+    return choice().get("backend") != "off"
+
+
+def off_reason():
+    return "off (AUTHORSHIP_AUTO=0)" if os.environ.get("AUTHORSHIP_AUTO") == "0" else "off (authorship classifier use off)"
+
+
 def _claude_bin():
     for c in (os.environ.get("AUTHORSHIP_CLAUDE_BIN"), os.environ.get("CLAUDE_CODE_EXECPATH"), shutil.which("claude")):
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
@@ -118,7 +181,7 @@ class ClaudeCLI(object):
     prompt_hash = PROMPT_HASH
 
     def __init__(self, model=None, timeout=180):
-        self.model = model or os.environ.get("AUTHORSHIP_AUTO_MODEL") or DEFAULT_MODEL
+        self.model = model or setting("AUTHORSHIP_AUTO_MODEL", "claude_model", DEFAULT_MODEL)
         self.timeout = timeout
 
     def classify(self, payload):
@@ -158,6 +221,79 @@ class ClaudeCLI(object):
         return data.get("entries") or [], (models[0] if models else self.model), out.get("total_cost_usd")
 
 
+def _strict(schema):
+    """The schema with additionalProperties false on every object, as strict structured output requires."""
+    if isinstance(schema, dict):
+        out = {k: _strict(v) for k, v in schema.items()}
+        if out.get("type") == "object":
+            out["additionalProperties"] = False
+        return out
+    if isinstance(schema, list):
+        return [_strict(x) for x in schema]
+    return schema
+
+
+class OpenRouterLLM(object):
+    """Any OpenRouter model that supports structured output, with the same prompt and schema as ClaudeCLI.
+    Asks for zero-data-retention endpoints and no data collection."""
+
+    name = "openrouter"
+    prompt_hash = PROMPT_HASH
+
+    def __init__(self, model=None, key=None, timeout=180):
+        self.model = model or setting("AUTHORSHIP_AUTO_MODEL", "openrouter_model", OPENROUTER_DEFAULT_MODEL)
+        self.key = key or os.environ.get("OPENROUTER_API_KEY")
+        self.endpoint = os.environ.get("AUTHORSHIP_OPENROUTER_ENDPOINT") or OPENROUTER_URL
+        self.timeout = timeout
+
+    def classify(self, payload):
+        import jev_client
+
+        if not self.key:
+            raise ClassifierError("OPENROUTER_API_KEY is not set")
+        body = {"model": self.model, "temperature": 0, "usage": {"include": True},
+                "messages": [{"role": "system", "content": SYSTEM_PROMPT},
+                             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+                "response_format": {"type": "json_schema",
+                                    "json_schema": {"name": "classification", "strict": True, "schema": _strict(SCHEMA)}},
+                "provider": {"zdr": True, "data_collection": "deny", "require_parameters": True}}
+        try:
+            res = jev_client._post(self.endpoint, self.key, body, timeout=self.timeout)
+        except jev_client.JevError as exc:
+            raise ClassifierError("openrouter: %s" % exc)
+        if res.get("error"):
+            raise ClassifierError("openrouter: %s" % str(res["error"])[:300])
+        try:
+            content = res["choices"][0]["message"]["content"]
+            data = json.loads(content) if isinstance(content, str) else content
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise ClassifierError("openrouter returned no structured output: %s" % json.dumps(res)[:300])
+        return data.get("entries") or [], res.get("model") or self.model, (res.get("usage") or {}).get("cost")
+
+
+def openrouter_models(text=None, fetch=None):
+    """[(id, USD per million input tokens or None)] of OpenRouter models with structured output, optionally filtered."""
+    if fetch is None:
+        import urllib.request
+
+        def fetch():
+            with urllib.request.urlopen(OPENROUTER_MODELS_URL, timeout=20) as r:
+                return json.loads(r.read().decode("utf-8"))
+    out = []
+    for m in fetch().get("data") or []:
+        mid = m.get("id") or ""
+        if "structured_outputs" not in (m.get("supported_parameters") or []) or mid.endswith(":batch"):
+            continue
+        if text and text.lower() not in mid.lower():
+            continue
+        try:
+            price = float((m.get("pricing") or {}).get("prompt")) * 1e6
+        except (TypeError, ValueError):
+            price = None
+        out.append((mid, price if price is None or price >= 0 else None))
+    return sorted(out)
+
+
 STAGE_CHOICES = ["same", "Exploration", "Prototype", "Validation", "Refinement", "Integration"]
 
 
@@ -172,12 +308,12 @@ class JevBackend(object):
     name = "jev"
     builds_on_min = 0.30  # one probability vector is shared by every parent, so each gets a smaller share
 
-    def __init__(self, provider=None, model="jev-1.13.0"):
+    def __init__(self, provider=None, model=None):
         import jev_client
 
         self.jev = jev_client
-        self.provider = provider or jev_client.default_provider()
-        self.model = model
+        self.provider = provider or jev_client.default_provider(setting("AUTHORSHIP_JEV_PROVIDER", "jev_provider"))
+        self.model = model or setting("AUTHORSHIP_JEV_MODEL", "jev_model", JEV_DEFAULT_MODEL)
 
     @staticmethod
     def questions(entry, candidates):
@@ -267,16 +403,23 @@ JEV_KEYS = ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "AI_GATEWAY_API_KEY")
 
 
 def default_backend():
-    """Jev when a Jev key is set (TypeSafe, OpenRouter or Vercel), else the Claude CLI.
-    AUTHORSHIP_AUTO_BACKEND=claude|jev forces one."""
+    """The backend chosen with AUTHORSHIP_AUTO_BACKEND=claude|openrouter|jev, else with `authorship classifier use`.
+    With no choice: Jev when a Jev key is set (TypeSafe, OpenRouter or Vercel), else the Claude CLI."""
     import jev_client
 
-    forced = os.environ.get("AUTHORSHIP_AUTO_BACKEND")
+    forced = setting("AUTHORSHIP_AUTO_BACKEND", "backend")
+    if forced not in (None, "") + BACKENDS:
+        raise ClassifierError("unknown classifier backend %r (use claude, openrouter or jev)" % forced)
+    if forced == "openrouter":
+        if not os.environ.get("OPENROUTER_API_KEY"):
+            raise ClassifierError("the OpenRouter classifier is chosen but OPENROUTER_API_KEY is not set")
+        return OpenRouterLLM()
     has_jev = any(os.environ.get(k) for k in JEV_KEYS)
-    if forced == "jev" or (forced != "claude" and has_jev):
-        if not jev_client.has_key():
-            raise ClassifierError("AUTHORSHIP_AUTO_BACKEND=jev but no Jev key is set")
-        return JevBackend()
+    if forced == "jev" or (forced not in ("claude", "off") and has_jev):
+        b = JevBackend()
+        if not jev_client.has_key(b.provider):
+            raise ClassifierError("Jev is chosen but no key is set for %s" % b.provider.name)
+        return b
     if available():
         return ClaudeCLI()
     return None
@@ -293,6 +436,11 @@ def describe_backend(b):
                     }.get(p.name, "TypeSafe AI (api.typesafe.ai)")
         return {"backend": "jev", "label": "Jev", "model": b.model, "provider": p.name, "endpoint": p.endpoint,
                 "sends_to": sends_to, "third_party": True}
+    if getattr(b, "name", "") == "openrouter":
+        return {"backend": "openrouter", "label": "OpenRouter", "model": b.model, "provider": "openrouter",
+                "endpoint": b.endpoint, "third_party": True,
+                "sends_to": "OpenRouter, which routes it to the provider of %s (zero data retention and no data "
+                            "collection requested)" % b.model}
     if getattr(b, "name", "") == "claude-cli":
         return {"backend": "claude-cli", "label": "Claude", "model": b.model, "provider": "anthropic", "endpoint": "claude -p",
                 "sends_to": "Anthropic, through your Claude Code login (it already receives the session)", "third_party": False}

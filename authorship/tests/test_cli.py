@@ -236,3 +236,37 @@ def test_anchor_finds_ots_outside_the_path(monkeypatch, tmp_path):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     monkeypatch.setenv("AUTHORSHIP_BIN_DIR", str(b))
     assert anchor.ots_bin() == str(f)
+
+
+def test_classifier_use_saves_the_choice(monkeypatch):
+    import io
+    import classifier
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+    monkeypatch.setattr(ledger, "spawned_by_claude", lambda: False)
+    monkeypatch.setattr(classifier, "openrouter_models", lambda text=None: [("google/gemini-3.8-flash", 0.75)])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.delenv("AUTHORSHIP_AUTO")
+    out = io.StringIO()
+    assert cli.cmd_classifier_use(["openrouter", "google/gemini-3.8-flash"], stdout=out) == 0
+    assert classifier.choice() == {"backend": "openrouter", "openrouter_model": "google/gemini-3.8-flash"}
+    assert "OpenRouter (google/gemini-3.8-flash)" in out.getvalue() and "new party" in out.getvalue()
+    assert cli.cmd_classifier_use(["openrouter", "no/such-model"], stdout=io.StringIO()) == 2
+    assert cli.cmd_classifier_use(["jev", "--provider", "openrouter"], stdout=io.StringIO()) == 0
+    assert classifier.choice()["jev_provider"] == "openrouter" and classifier.choice()["backend"] == "jev"
+    assert cli.cmd_classifier_use(["claude", "--provider", "openrouter"], stdout=io.StringIO()) == 2
+    assert cli.cmd_classifier_use(["nonsense"], stdout=io.StringIO()) == 2
+    assert cli.cmd_classifier_use(["off"], stdout=io.StringIO()) == 0 and not classifier.auto_enabled()
+    assert cli.cmd_classifier_use(["auto"], stdout=io.StringIO()) == 0 and classifier.choice() == {}
+
+
+def test_classifier_use_refuses_claude(qr):
+    r = run_cli(["classifier", "use", "off"], cwd=qr.project, CLAUDECODE="1")
+    assert r.returncode == 3 and "human-only" in r.stderr
+
+
+def test_classifier_models_claude_and_jev():
+    import io
+    out = io.StringIO()
+    assert cli.cmd_classifier_models(["claude"], stdout=out) == 0 and "sonnet" in out.getvalue()
+    out = io.StringIO()
+    assert cli.cmd_classifier_models(["jev"], stdout=out) == 0 and "jev-1.13.0" in out.getvalue()

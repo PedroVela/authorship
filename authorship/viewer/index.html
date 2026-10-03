@@ -116,10 +116,12 @@
 <dialog id="setup" aria-labelledby="setup-title">
   <form method="dialog">
     <h2 id="setup-title">Choose who labels the entries</h2>
-    <p class="muted">Settings are environment variables, read when the annotator starts. Type the commands in your own terminal, not in Claude Code.</p>
+    <p class="muted">Type the commands in your own terminal, not in Claude Code. The choice is saved for every project; then run <code>authorship restart</code>.</p>
     <h3>Claude (default)</h3>
     <p>Nothing to set up: it uses the <code>claude</code> command and your existing login. The text goes to Anthropic, which already receives your session.</p>
-    <p>Another model: <code>export AUTHORSHIP_AUTO_MODEL=claude-haiku-4-5-20251001</code> (default <code>claude-sonnet-5</code>).</p>
+    <p>Another model: <code>authorship classifier use claude haiku</code> (or <code>sonnet</code>, <code>opus</code>, a full id; default <code>claude-sonnet-5</code>).</p>
+    <h3>Any model through OpenRouter</h3>
+    <p>With <code>OPENROUTER_API_KEY</code> in your shell profile: <code>authorship classifier use openrouter google/gemini-3.8-flash</code>. <code>authorship classifier models openrouter</code> lists the models that can answer in the required format. The plugin asks for zero data retention and no data collection.</p>
     <h3>Jev</h3>
     <ol class="steps">
       <li>Get a key from one of these. Jev is the same model in all three; they differ in who bills you and who sees the text on the way:
@@ -132,15 +134,16 @@
         <pre class="cmd">export TYPESAFE_API_KEY=your-key     # TypeSafe
 export OPENROUTER_API_KEY=your-key   # or OpenRouter
 export AI_GATEWAY_API_KEY=your-key   # or Vercel</pre>
-        With more than one, TypeSafe wins, then OpenRouter. <code>export AUTHORSHIP_JEV_PROVIDER=openrouter</code> picks one.</li>
+        Then: <code>authorship classifier use jev</code>, optionally with a model and <code>--provider typesafe|openrouter|vercel_gateway</code>.</li>
       <li>Open a new terminal and run <code>authorship restart</code>.</li>
       <li>Check it: <code>authorship classifier --test</code> sends one made-up sentence and shows the answer.</li>
     </ol>
-    <p class="warn-note">With Jev, the text of your entries goes to that provider. Public disclosure before filing can destroy novelty: decide this with your attorney.</p>
+    <p class="warn-note">With Jev or OpenRouter, the text of your entries goes to that provider. Public disclosure before filing can destroy novelty: decide this with your attorney.</p>
     <h3>Other settings</h3>
     <ul class="plain">
-      <li>Force one: <code>export AUTHORSHIP_AUTO_BACKEND=claude</code> (or <code>jev</code>)</li>
-      <li>Turn it off: <code>export AUTHORSHIP_AUTO=0</code>. Tags you type and the deterministic rules keep working.</li>
+      <li>Turn it off: <code>authorship classifier use off</code>. Tags you type and the deterministic rules keep working.</li>
+      <li>Forget the choice: <code>authorship classifier use auto</code> (Jev if a Jev key is set, else Claude).</li>
+      <li>Environment variables win over the saved choice: <code>AUTHORSHIP_AUTO_BACKEND</code>, <code>AUTHORSHIP_AUTO_MODEL</code>, <code>AUTHORSHIP_JEV_PROVIDER</code>, <code>AUTHORSHIP_JEV_MODEL</code>, <code>AUTHORSHIP_AUTO=0</code>.</li>
       <li>After any change: <code>authorship restart</code>. The annotator keeps the settings it started with.</li>
     </ul>
     <div class="dialog-actions"><button class="btn primary" value="close">Close</button></div>

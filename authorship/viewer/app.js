@@ -312,11 +312,11 @@
     var how = el('button', { class: 'link-btn', type: 'button', onclick: function () { var d = $('setup'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); } }, 'How to change it');
     var msg;
     if (c.state === 'off') { cls += ' off'; msg = [el('strong', null, 'Automatic labels are off.'), ' Only tags you type and the deterministic rules label entries.']; }
-    else if (c.state === 'no-backend') { cls += ' err'; msg = [el('strong', null, 'Nothing is labeling entries.'), ' No Jev key is set and the claude command was not found.']; }
+    else if (c.state === 'no-backend') { cls += ' err'; msg = [el('strong', null, 'Nothing is labeling entries.'), ' No backend is usable: no Jev or OpenRouter key, and the claude command was not found.']; }
     else if (c.state === 'error' && !c.backend) { cls += ' err'; msg = [el('strong', null, 'The classifier failed.'), ' ' + (c.error || '') + ' It retries on the next change.']; }
-    else if (c.backend === 'jev') {
+    else if (c.third_party) {
       cls += ' third';
-      msg = [el('strong', null, 'Labeled automatically by Jev'), c.model ? ' (' + c.model + ')' : '', '. Entry text is sent to ' + c.sends_to + '.'];
+      msg = [el('strong', null, 'Labeled automatically by ' + (c.label || c.backend)), c.model ? ' (' + c.model + ')' : '', '. Entry text is sent to ' + c.sends_to + '.'];
     } else if (c.backend === 'claude-cli') {
       msg = [el('strong', null, 'Labeled automatically by Claude'), c.model ? ' (' + c.model + ')' : '', ', through your Claude Code login. No new party receives your text.'];
     } else if (c.backend) {
