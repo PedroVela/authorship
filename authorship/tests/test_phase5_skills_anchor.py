@@ -39,6 +39,7 @@ serial = ./serial
 crypto_device = builtin
 signer_cert = ./tsa.crt
 signer_key = ./tsa.key
+signer_digest = sha256
 default_policy = 1.2.3.4.1
 digests = sha256
 accuracy = secs:1
