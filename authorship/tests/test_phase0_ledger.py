@@ -119,6 +119,23 @@ def test_malformed_stdin_exits_zero_and_logs(project):
     assert "ledger.hook" in log
 
 
+def test_prompt_text_is_stored_exactly_whatever_the_locale(project):
+    """Claude Code sends UTF-8. On Windows, a pipe defaults to cp1252, which once stored "dÃ³nde" for "dónde"."""
+    import subprocess
+    import sys
+    harness.init_store(project)
+    text = "Problema: ¿dónde votan? Ñandutí, São Paulo, 東京 ✓"
+    env = harness.hook_env(project)
+    for k in ("PYTHONUTF8", "PYTHONIOENCODING"):
+        env.pop(k, None)
+    raw = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s", "prompt": text, "cwd": project},
+                     ensure_ascii=False).encode("utf-8")
+    r = subprocess.run([sys.executable, "-X", "utf8=0", os.path.join(harness.SCRIPTS, "ledger.py"), "hook"],
+                       input=raw, capture_output=True, env=env, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert [e["text"] for e in entries(ledger.Store(project)) if e["event"] == "UserPromptSubmit"] == [text]
+
+
 def test_uninitialized_project_records_nothing(project):
     r = run_hook(project, {"hook_event_name": "UserPromptSubmit", "prompt": "hi", "cwd": project})
     assert r.returncode == 0
