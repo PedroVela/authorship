@@ -69,6 +69,7 @@ def test_note_command_writes_a_human_note(qr, monkeypatch, capsys):
     assert capsys.readouterr().out.startswith("#15 ")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the wrapper is a sh script; Windows runs it through Git Bash, not directly")
 def test_install_writes_a_working_wrapper(qr, tmp_path):
     bin_dir = str(tmp_path / "bin")
     r = run_cli(["install", "--bin-dir", bin_dir], cwd=str(tmp_path))
@@ -195,6 +196,7 @@ def test_doctor_reports_each_piece(qr, monkeypatch, tmp_path):
     assert "doctor --fix installs ~/.local/bin/authorship" in out.getvalue()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="checks a POSIX shell profile and an ots symlink")
 def test_doctor_fix_installs_command_path_ots_and_daemons(qr, monkeypatch, tmp_path):
     import io
     home = tmp_path / "home"

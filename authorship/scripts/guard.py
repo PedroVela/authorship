@@ -55,6 +55,10 @@ def _real(path, cwd):
     return os.path.realpath(path)
 
 
+def _same(a, b):
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
 def _inside(path, root):
     return path == root or path.startswith(root + os.sep)
 
@@ -166,7 +170,7 @@ def check_bash(cmd, cwd, auth, store, project):
         for i, t in enumerate(seg):
             base = os.path.basename(t)
             if base in PROTECTED_SCRIPTS:
-                if base == "anchor.py" and seg[i + 1:] == ["seal"] and _real(t, here) == os.path.join(ledger.SCRIPTS_DIR, "anchor.py"):
+                if base == "anchor.py" and seg[i + 1:] == ["seal"] and _same(_real(t, here), os.path.join(ledger.SCRIPTS_DIR, "anchor.py")):
                     continue  # the seal skill: timestamps the current head, writes no human entry
                 raise Block("Bash may not run %s (human-only CLI or viewer server)" % base)
 

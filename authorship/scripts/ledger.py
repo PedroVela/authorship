@@ -23,6 +23,14 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from redact import redact, redact_obj  # noqa: E402
 
+if os.name == "nt":
+    # Windows consoles default to a legacy code page that cannot print ✓ or ✗; every script imports this module
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 SCHEMA_VERSION = 2
 ACCEPTED_VERSIONS = (1, 2)
 INLINE_MAX = 8 * 1024
@@ -120,17 +128,35 @@ class _Lock(object):
         self.fd = None
 
     def __enter__(self):
-        import fcntl
-
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
-        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        if os.name == "nt":
+            import msvcrt
+
+            # one byte at offset 0; LK_LOCK gives up after ~10 s, so keep trying
+            while True:
+                try:
+                    os.lseek(self.fd, 0, os.SEEK_SET)
+                    msvcrt.locking(self.fd, msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    continue
+        else:
+            import fcntl
+
+            fcntl.flock(self.fd, fcntl.LOCK_EX)
         return self
 
     def __exit__(self, *a):
-        import fcntl
+        if os.name == "nt":
+            import msvcrt
 
-        fcntl.flock(self.fd, fcntl.LOCK_UN)
+            os.lseek(self.fd, 0, os.SEEK_SET)
+            msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(self.fd, fcntl.LOCK_UN)
         os.close(self.fd)
 
 
@@ -531,7 +557,8 @@ def h_tool(store, p):
                 rel = os.path.relpath(abspath, store.project)
             except ValueError:
                 rel = abspath
-            fields["file"] = rel if not rel.startswith("..") else abspath
+            # "/" on every platform, so the record reads the same wherever it was made
+            fields["file"] = (rel if not rel.startswith("..") else abspath).replace(os.sep, "/")
             if tool in FILE_TOOLS:
                 fields["file_sha_after"] = file_sha(abspath)
         if tool == "Bash" and isinstance(tin.get("command"), str):
@@ -664,26 +691,49 @@ def reconcile(store, current_session):
 def spawn_detached(argv, env=None):
     import subprocess
 
+    kw = {"start_new_session": True}
+    if os.name == "nt":
+        # no console window, and not killed when the hook's console closes
+        kw = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+              | getattr(subprocess, "CREATE_NO_WINDOW", 0)}
     try:
         subprocess.Popen(
             argv,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
             close_fds=True,
             env=env,
+            **kw
         )
     except Exception:
         pass
 
 
+def pid_alive(pid):
+    if os.name == "nt":
+        # os.kill(pid, 0) would terminate the process on Windows
+        import ctypes
+
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def _pid_alive(pidfile):
     try:
         with open(pidfile) as f:
-            pid = int(f.read().strip())
-        os.kill(pid, 0)
-        return True
+            return pid_alive(int(f.read().strip()))
     except (OSError, ValueError):
         return False
 

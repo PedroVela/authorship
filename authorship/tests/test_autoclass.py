@@ -183,6 +183,7 @@ def test_rebuild_matches_incremental_with_auto(untagged):
     assert a == dump(index.update(untagged, rebuild=True))
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the fake `claude` is a shebang script")
 def test_claude_cli_backend_is_sandboxed(untagged, tmp_path, monkeypatch):
     """The real backend runs `claude -p` with no tools, hooks or MCP, outside the project."""
     log = tmp_path / "argv.json"

@@ -11,7 +11,7 @@ import ledger
 from harness import PLUGIN, SCRIPTS, entries
 
 B, A, ASK = "block", "allow", "ask"
-PY = "python3 %s/%%s" % SCRIPTS
+PY = "python3 %s/%%s" % SCRIPTS.replace(os.sep, "/")  # as bash sees it, also on Windows
 
 CASES = [
     # file tools
@@ -130,13 +130,16 @@ def guarded(tmp_path_factory):
     git(project, "add", "-A")
     git(project, "commit", "-qm", "first")
     ledger.write_note(store, "#idea second")  # uncommitted ledger line
-    os.symlink(os.path.join(project, ".authorship", "ledger.jsonl"), os.path.join(project, "notes"))
-    os.symlink(os.path.join(project, ".authorship"), os.path.join(project, "store_link"))
+    try:
+        os.symlink(os.path.join(project, ".authorship", "ledger.jsonl"), os.path.join(project, "notes"))
+        os.symlink(os.path.join(project, ".authorship"), os.path.join(project, "store_link"))
+    except OSError:  # Windows without Developer Mode: symlinks need admin rights
+        pass
     return project
 
 
 def run_guard(project, tool, tin, cwd=None):
-    tin = json.loads(json.dumps(tin).replace("{project}", project))
+    tin = json.loads(json.dumps(tin).replace("{project}", json.dumps(project)[1:-1]))
     payload = {"hook_event_name": "PreToolUse", "session_id": "g", "cwd": cwd or project,
                "tool_name": tool, "tool_input": tin}
     return subprocess.run([sys.executable, os.path.join(SCRIPTS, "guard.py")], input=json.dumps(payload),
@@ -150,6 +153,9 @@ def test_case_table_is_big_enough():
 
 @pytest.mark.parametrize("expect,tool,tin", CASES, ids=["%s-%s-%s" % (c[0], c[1], list(c[2].values())[0][:40]) for c in CASES])
 def test_guard_case(guarded, expect, tool, tin):
+    links = ("notes", "store_link")
+    if any(l in json.dumps(tin) for l in links) and not os.path.islink(os.path.join(guarded, "notes")):
+        pytest.skip("symlinks unavailable (Windows without admin rights)")
     before = len(entries(ledger.Store(guarded)))
     r = run_guard(guarded, tool, tin)
     after = entries(ledger.Store(guarded))
@@ -248,6 +254,7 @@ def test_human_only_cli_refuses_claude_env_marker(project, args):
     assert entries(ledger.Store(project)) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="needs /bin/sh and a symlink; on Windows only the CLAUDECODE marker applies")
 def test_human_only_cli_refuses_claude_parent_process(project, tmp_path):
     """Second signal: an ancestor process named `claude`, even without the env marker."""
     harness.init_store(project)

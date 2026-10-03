@@ -469,10 +469,13 @@ def install_ots():
     import anchor
 
     venv = anchor.OTS_HOME
-    if not os.path.exists(os.path.join(venv, "bin", "python")):
+    vbin, exe = ("Scripts", ".exe") if os.name == "nt" else ("bin", "")
+    if not os.path.exists(os.path.join(venv, vbin, "python" + exe)):
         subprocess.run([sys.executable, "-m", "venv", venv], check=True, capture_output=True, timeout=300)
-    subprocess.run([os.path.join(venv, "bin", "python"), "-m", "pip", "install", "--quiet", "--upgrade",
+    subprocess.run([os.path.join(venv, vbin, "python" + exe), "-m", "pip", "install", "--quiet", "--upgrade",
                     "opentimestamps-client"], check=True, capture_output=True, timeout=600)
+    if os.name == "nt":
+        return os.path.join(venv, vbin, "ots.exe")  # anchor.ots_bin() finds it there; symlinks need admin rights
     os.makedirs(bin_dir(), exist_ok=True)
     link = os.path.join(bin_dir(), "ots")
     if not os.path.exists(link):

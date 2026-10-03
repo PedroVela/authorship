@@ -41,7 +41,7 @@ def ots_bin():
     """The `ots` client: on the PATH, or where `authorship doctor --fix` installs it."""
     local_bin = os.environ.get("AUTHORSHIP_BIN_DIR") or os.path.join(os.path.expanduser("~"), ".local", "bin")
     for c in (shutil.which("ots"), os.path.join(local_bin, "ots"),
-              os.path.join(OTS_HOME, "bin", "ots")):
+              os.path.join(OTS_HOME, "bin", "ots"), os.path.join(OTS_HOME, "Scripts", "ots.exe")):
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
     return None
