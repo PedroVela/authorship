@@ -76,7 +76,7 @@ The classifier labels entries on its own (see [Automatic classification](#automa
 | `#problem` | Technical problem being solved | `#problema` |
 | `#hypothesis` | Expected to work, not yet shown | `#hipotesis` |
 | `#discard` | Failed or rejected approach | `#descarte` |
-| `#stage <name>` | Opens a new stage in the map | `#etapa` |
+| `#stage <name>` | Opens a new stage of the work | `#etapa` |
 
 Example: `#stage Prototype #decision long-poll the sequence endpoint every 2 s, not the webhook, because the bank does not sign webhooks`.
 
@@ -122,10 +122,9 @@ The `inventorship-reviewer` subagent writes a contribution analysis for one clai
 
 ### Viewer
 
-The viewer starts in the background at session start, on `127.0.0.1` only, and opens your browser once (`authorship open` brings it back). Four tabs, in plain words:
-- **Overview**: what you invented. Each claim, the elements it rests on, and who contributed each: you, Claude, or you changing Claude's proposal.
-- **Timeline**: what happened, in order, by stage.
-- **Map**: how the ideas connect, with a slider to replay the record.
+The viewer starts in the background at session start, on `127.0.0.1` only, and opens your browser once (`authorship open` brings it back). A status line (intact, sealed to #N, N of M signed), then three tabs, in plain words:
+- **What you invented**: each claim, the elements it rests on, and who contributed each: you, Claude, or you changing Claude's proposal.
+- **Timeline**: what happened, in order, by stage; open an entry for its text, links and code change.
 - **Review**: labels to check.
 
 You are a blue circle and Claude an orange square. Review answers are the only writes, and only with the session secret. Full guide with screenshots: [docs/VIEWER.md](docs/VIEWER.md).

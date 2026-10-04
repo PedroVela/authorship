@@ -6,10 +6,8 @@
 <meta name="color-scheme" content="light dark">
 <title>Authorship record</title>
 <link rel="stylesheet" href="app.css">
-<!-- app.js runs first: it moves the #k= secret out of the URL before anything else loads.
-     Deferred scripts execute in document order; the app starts on DOMContentLoaded. -->
+<!-- app.js moves the #k= secret out of the URL before anything else; it starts on DOMContentLoaded. -->
 <script src="app.js" defer></script>
-<script src="vendor/cytoscape.min.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -20,34 +18,26 @@
   </div>
   <div class="top-right">
     <span class="badge" id="chain-badge" role="status" aria-live="polite">Loading…</span>
-    <span class="sync" id="sync" aria-live="off"></span>
-    <button class="link-btn" id="help-btn" type="button" aria-haspopup="dialog">How to read this</button>
+    <button class="link-btn" id="help-btn" type="button" aria-haspopup="dialog">Help</button>
     <a class="link-btn" href="/api/report.md" target="_blank" rel="noopener">Report</a>
   </div>
 </header>
 <div class="banner danger" id="broken-banner" role="alert" hidden></div>
-<div class="banner notice" id="notice" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="Views" id="tabs">
   <button role="tab" id="tab-overview" data-view="overview" aria-controls="panel-overview" aria-selected="true">
-    <span class="tab-name">Overview</span><span class="tab-hint">What you invented</span></button>
+    <span class="tab-name">What you invented</span></button>
   <button role="tab" id="tab-timeline" data-view="timeline" aria-controls="panel-timeline" aria-selected="false" tabindex="-1">
-    <span class="tab-name">Timeline</span><span class="tab-hint">What happened, in order</span></button>
-  <button role="tab" id="tab-map" data-view="map" aria-controls="panel-map" aria-selected="false" tabindex="-1">
-    <span class="tab-name">Map</span><span class="tab-hint">How the ideas connect</span></button>
+    <span class="tab-name">Timeline</span></button>
   <button role="tab" id="tab-review" data-view="review" aria-controls="panel-review" aria-selected="false" tabindex="-1">
-    <span class="tab-name">Review <span class="count" id="review-count" hidden></span></span><span class="tab-hint">Check the labels</span></button>
+    <span class="tab-name">Review <span class="count" id="review-count" hidden></span></span></button>
 </nav>
 
 <main id="main">
+  <div class="cls-strip" id="cls-strip" role="note" hidden></div>
   <!-- Overview -->
   <section class="panel" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
-    <div class="panel-head">
-      <h1>What you invented</h1>
-      <p class="lede">Each claim, the elements it rests on, and who contributed each one. Everything cites the ledger entry it comes from, as <code>#seq</code>.</p>
-    </div>
-    <div class="kpis" id="kpis"></div>
-    <div class="cls-strip" id="cls-overview" role="note"></div>
+    <p class="lede">Each claim, what it rests on, and who contributed each part. <code>#N</code> is the ledger entry; open it to read it.</p>
     <div id="inventions"></div>
     <div id="against"></div>
     <div id="stages-summary"></div>
@@ -55,10 +45,6 @@
 
   <!-- Timeline -->
   <section class="panel" id="panel-timeline" role="tabpanel" aria-labelledby="tab-timeline" hidden>
-    <div class="panel-head">
-      <h1>What happened, in order</h1>
-      <p class="lede">The whole conversation, grouped by stage. Open any row for its full text, the code change, and the labels on it.</p>
-    </div>
     <div class="filters" role="group" aria-label="Show">
       <div class="seg" id="tl-filter">
         <button type="button" data-f="key" aria-pressed="true">Key moments</button>
@@ -70,37 +56,10 @@
     <div id="timeline"></div>
   </section>
 
-  <!-- Map -->
-  <section class="panel wide" id="panel-map" role="tabpanel" aria-labelledby="tab-map" hidden>
-    <div class="panel-head">
-      <h1>How the ideas connect</h1>
-      <p class="lede">Each shape is an entry; each line says how a later entry relates to an earlier one. Pick a claim to see only what it is built from, or show the whole record.</p>
-    </div>
-    <div class="filters">
-      <label>Focus
-        <select id="map-focus"></select></label>
-      <label class="time">Record up to
-        <input type="range" id="map-slider" min="1" max="1" value="1" aria-describedby="map-slider-out">
-        <output id="map-slider-out"></output></label>
-      <button type="button" id="map-play" class="btn">Play</button>
-      <button type="button" id="map-fit" class="btn">Fit</button>
-    </div>
-    <div class="map-wrap">
-      <div class="map-col">
-        <div class="map-box"><div id="map" role="img" aria-label="Map of how the entries relate"></div><div class="tip" id="map-tip" role="tooltip" hidden></div></div>
-        <ul class="legend" id="map-legend"></ul>
-      </div>
-      <aside class="detail" id="map-detail" aria-live="polite"><p class="muted">Select a shape to read its entry.</p></aside>
-    </div>
-  </section>
 
   <!-- Review -->
   <section class="panel" id="panel-review" role="tabpanel" aria-labelledby="tab-review" hidden>
-    <div class="panel-head">
-      <h1>Check the labels</h1>
-      <p class="lede">The classifier labels every entry on its own. Labels in your favor that it was unsure of wait here for you; your answer is recorded in the ledger, in your name. You can also correct any label it already counted.</p>
-    </div>
-    <div class="cls-strip" id="cls-review" role="note"></div>
+    <p class="lede">Labels in your favor the classifier was unsure of. Your answer is recorded in the ledger, in your name.</p>
     <p class="hint" id="review-locked" hidden>Answers are disabled on this page. Open it from your terminal with <code>authorship open</code>, or answer with <code>authorship review</code>.</p>
     <h2 class="section">Waiting for you <span class="muted" id="review-n"></span></h2>
     <div id="review-pending"></div>
@@ -154,13 +113,14 @@ export AI_GATEWAY_API_KEY=your-key   # or Vercel</pre>
   <form method="dialog">
     <h2 id="help-title">How to read this</h2>
     <dl class="help-list">
-      <dt>Overview</dt><dd>Your claims and what each rests on. Every element says whether it came from you, from Claude, or from you changing something Claude proposed.</dd>
-      <dt>Timeline</dt><dd>The record in order, grouped by stage of the work. "Key moments" hides Claude's routine work; "Everything" shows every entry.</dd>
-      <dt>Map</dt><dd>The same entries as a picture: problems on top, ideas in the middle, decisions and claims below, Claude's code and tests at the bottom. Time runs left to right. Drag the slider to replay how it grew.</dd>
+      <dt>What you invented</dt><dd>Your claims and what each rests on. Every element says whether it came from you, from Claude, or from you changing something Claude proposed.</dd>
+      <dt>Timeline</dt><dd>The record in order, grouped by stage of the work. "Key moments" hides Claude's routine work; "Everything" shows every entry. Open a row for its full text and code change.</dd>
       <dt>Review</dt><dd>Labels the classifier was not sure of, for you to accept, reject or change. Only your answers are evidence; the classifier's labels are opinions.</dd>
     </dl>
     <h3>Who labels the entries</h3>
-    <p class="muted">A classifier reads every entry in the background and labels it (problem, idea, decision, claim, stage). By default it is Claude, through your own login, so no new party receives your text. If you set a Jev key it is Jev, and your entry text goes to that provider. The strip under the tiles says which one is in use; "How to change it" shows the steps.</p>
+    <p class="muted">A classifier reads every entry in the background and labels it (problem, idea, decision, claim, stage). By default it is Claude, through your own login, so no new party receives your text. A strip under the tabs appears when that changes: text going to another provider, or labels off or failing.</p>
+    <p id="help-classifier"></p>
+    <p><button class="link-btn" type="button" id="setup-btn">How to change it</button></p>
     <h3>Symbols</h3>
     <ul class="help-symbols">
       <li><i class="sym you" aria-hidden="true"></i> Circle: written by you</li>
@@ -169,7 +129,8 @@ export AI_GATEWAY_API_KEY=your-key   # or Vercel</pre>
       <li><span class="lbl auto">idea</span> Dashed label: set by the classifier; solid: typed by you or confirmed</li>
       <li><code>#4</code>: ledger entry 4; <code>#3.2</code>: option 2 of Claude's reply #3</li>
     </ul>
-    <p class="muted">The ledger is append-only and hash-chained: the badge at the top turns red if any entry was changed after it was written.</p>
+    <h3>The badge at the top</h3>
+    <p class="muted">Intact: no entry changed since it was written (the ledger is hash-chained). Sealed to #N: an external timestamp covers the record up to that entry. Signed: how many of your entries carry your SSH signature (<code>authorship sign setup</code>). It turns red if any entry was changed.</p>
     <div class="dialog-actions"><button class="btn primary" value="close">Close</button></div>
   </form>
 </dialog>

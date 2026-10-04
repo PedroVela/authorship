@@ -81,7 +81,7 @@ authorship classifier          # the backend the annotator uses, where the text 
 authorship classifier --test   # also sends one made-up sentence and shows the answer (checks your key)
 ```
 
-The viewer shows the same, in a strip under the tiles on Overview and on Review. Its **How to change it** link opens these steps.
+The viewer's **Help** says the same; a strip under the tabs appears when the text goes to another provider or labeling fails. **How to change it** opens these steps.
 
 **Claude (default).** Nothing to set up; it needs the `claude` command on the PATH. To pick another model:
 
