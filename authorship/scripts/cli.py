@@ -20,6 +20,9 @@
                                     environment variables still win). `auto` forgets the choice.
     authorship classifier models [claude|openrouter|jev] [FILTER]
                                     models to choose from (openrouter: those with structured output)
+    authorship export [--out DIR] [--no-zip]
+                                    a self-contained evidence bundle (record, proofs, a standalone
+                                    verify.py and the format) for an attorney or an expert
     authorship sign setup [--key PATH] [--principal EMAIL]
                                     sign your entries with an SSH key (default: git's signing key,
                                     else ~/.ssh/id_ed25519); `sign off` stops, `sign status` shows it
@@ -475,6 +478,23 @@ def cmd_classifier(store, args, stdout=None):
     return 0
 
 
+def cmd_export(store, args, stdout=None):
+    import export
+
+    stdout = stdout or sys.stdout
+    try:
+        res = export.export(store, _pop_flag(args, "--out"), make_zip="--no-zip" not in args)
+    except Exception as exc:
+        stdout.write("Not exported: %s\n" % exc)
+        return 1
+    stdout.write("Exported %d entries (head %s) in %d files:\n  %s\n" % (res["entries"], res["head"][:12], res["files"],
+                                                                         res["dir"]))
+    if res["zip"]:
+        stdout.write("  %s\n" % res["zip"])
+    stdout.write("Anyone can check it without the plugin: python3 verify.py, inside the folder.\n")
+    return 0
+
+
 def cmd_sign(args, stdout=None):
     import signing
 
@@ -744,7 +764,8 @@ def cmd_doctor(args, stdout=None):
 
 
 COMMANDS = {"log": cmd_log, "status": cmd_status, "verify": cmd_verify, "note": cmd_note, "seal": cmd_seal,
-            "open": cmd_open, "review": cmd_review, "classifier": cmd_classifier, "restart": cmd_restart}
+            "open": cmd_open, "review": cmd_review, "classifier": cmd_classifier, "restart": cmd_restart,
+            "export": cmd_export}
 
 
 def main(argv):

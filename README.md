@@ -368,6 +368,7 @@ To pause recording: `claude plugin disable authorship@authorship-dev` (the ledge
 ## More
 
 - [Plugin reference](authorship/README.md): all commands, skills, settings and files
+- [Export](authorship/README.md#export): `authorship export` gives your attorney a bundle that verifies without the plugin
 - [Automatic classification](authorship/docs/CLASSIFICATION.md): what is asked, which backend answers, thresholds, how to correct it
 - [The viewer](authorship/docs/VIEWER.md): the four tabs, the symbols, and how answers are recorded
 - [Threat model](authorship/docs/THREATS.md): what the plugin protects against, and what it does not

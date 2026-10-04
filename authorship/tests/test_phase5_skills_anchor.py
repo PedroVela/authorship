@@ -327,3 +327,72 @@ def test_session_end_seals_only_new_work(project, tsa_env, monkeypatch):
     harness.run_hook(project, {"hook_event_name": "SessionEnd", "reason": "other", "cwd": project}, env=env)
     time.sleep(1)
     assert len(anchors_of(store)) == n  # AUTHORSHIP_ANCHOR=0 turns it off
+
+
+def _verify_bundle(path):
+    """Run the bundle's verify.py in isolated mode (-I): no plugin module can be imported."""
+    r = subprocess.run([sys.executable, "-I", os.path.join(path, "verify.py"), path], capture_output=True, timeout=120)
+    return r.returncode, r.stdout.decode("utf-8", errors="replace")
+
+
+def test_export_bundle_verifies_without_the_plugin(qr, tsa_env, tmp_path):
+    import shutil
+    import export
+    res = anchor.run(qr)
+    assert res["completed"] == ["rfc3161"]
+    out = export.export(qr, str(tmp_path / "bundle"))
+    assert os.path.exists(out["zip"])
+    moved = str(tmp_path / "elsewhere" / "evidence")
+    shutil.copytree(out["dir"], moved)  # away from the plugin and the project
+    for name in ("README.md", "FORMAT.md", "verify.py", "ledger.jsonl", "SHA256SUMS"):
+        assert os.path.exists(os.path.join(moved, name)), name
+    assert os.path.isdir(os.path.join(moved, "anchors", "tsa"))
+    code, text = _verify_bundle(moved)
+    assert code == 0, text
+    assert "ok        %d entries chained" % ledger.verify(qr)["entries"] in text
+    assert "(RFC 3161, signature verified)" in text and "\nOK: 0 failed" in text
+    readme = open(os.path.join(moved, "README.md"), encoding="utf-8").read()
+    assert "Timestamped up to #%d" % res["anchored"]["seq"] in readme
+
+    # a changed blob, a changed entry and a changed file are each caught
+    blob = next(os.path.join(d, n) for d, _, ns in os.walk(os.path.join(moved, "blobs")) for n in ns)
+    open(blob, "ab").write(b"x")
+    code, text = _verify_bundle(moved)
+    assert code == 1 and "does not match SHA256SUMS" in text and "does not match its hash" in text
+    shutil.rmtree(moved)
+    shutil.copytree(out["dir"], moved)
+    lines = open(os.path.join(moved, "ledger.jsonl"), encoding="utf-8").read().splitlines()
+    lines[3] = lines[3].replace('"actor":"human"', '"actor":"ai"')
+    open(os.path.join(moved, "ledger.jsonl"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    code, text = _verify_bundle(moved)
+    assert code == 1 and "entry #4: hash mismatch" in text
+
+
+def test_export_includes_signatures(project, tmp_path, monkeypatch):
+    import export
+    import signing
+    if not signing.ssh_keygen():
+        pytest.skip("ssh-keygen not installed")
+    key = str(tmp_path / "k")
+    subprocess.run([signing.ssh_keygen(), "-q", "-t", "ed25519", "-N", "", "-f", key], check=True, capture_output=True)
+    if os.name == "nt":
+        subprocess.run(["icacls", key, "/inheritance:r", "/grant:r", "%s:F" % os.environ["USERNAME"]], check=True,
+                       capture_output=True)
+    c = signing.setup(key, "inventor@example.com")
+    harness.init_store(project)
+    ledger.write_note(ledger.Store(project), "#idea firmada")
+    out = export.export(ledger.Store(project), str(tmp_path / "b"), make_zip=False)
+    assert out["zip"] is None and os.path.exists(os.path.join(out["dir"], "allowed_signers"))
+    code, text = _verify_bundle(out["dir"])
+    assert code == 0, text
+    assert "1 of 1 human entries signed, all valid" in text and c["fingerprint"] in text
+    assert "No anchors" not in text and "unchecked no anchors in the bundle" in text
+
+
+def test_export_refuses_a_broken_record(qr, tmp_path):
+    import export
+    lines = open(qr.ledger).read().splitlines()
+    lines[4] = lines[4].replace('"PostToolUse"', '"PostToolUsf"')
+    open(qr.ledger, "w").write("\n".join(lines) + "\n")
+    with pytest.raises(RuntimeError, match="does not verify"):
+        export.export(qr, str(tmp_path / "b"))

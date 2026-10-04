@@ -66,13 +66,27 @@ def parse_anchor_text(text):
     return (int(seq.group(1)), h.group(1)) if seq and h else (None, None)
 
 
+def _tsa_dir(store, url):
+    host = re.sub(r"[^A-Za-z0-9.-]", "_", url.split("//", 1)[-1].split("/", 1)[0])
+    return os.path.join(store.anchors, "tsa", host)
+
+
+def _keep_certs(store, url):
+    """Copy AUTHORSHIP_TSA_CAFILE / _CERT into anchors/tsa/<host>/, so the record carries what verifies it."""
+    ca, cert = os.environ.get("AUTHORSHIP_TSA_CAFILE"), os.environ.get("AUTHORSHIP_TSA_CERT")
+    d = _tsa_dir(store, url)
+    for src, name in ((ca, "cacert.pem"), (cert, "tsa.crt")):
+        if src and os.path.exists(src) and not os.path.exists(os.path.join(d, name)):
+            os.makedirs(d, exist_ok=True)
+            shutil.copyfile(src, os.path.join(d, name))
+
+
 def _tsa_certs(store, url):
     """(cafile, untrusted) for verifying responses, or (None, None)."""
     ca, cert = os.environ.get("AUTHORSHIP_TSA_CAFILE"), os.environ.get("AUTHORSHIP_TSA_CERT")
     if ca:
         return ca, cert
-    host = re.sub(r"[^A-Za-z0-9.-]", "_", url.split("//", 1)[-1].split("/", 1)[0])
-    d = os.path.join(store.anchors, "tsa", host)
+    d = _tsa_dir(store, url)
     ca, cert = os.path.join(d, "cacert.pem"), os.path.join(d, "tsa.crt")
     if os.path.exists(ca):
         return ca, (cert if os.path.exists(cert) else None)
@@ -161,7 +175,7 @@ def run(store):
     base = os.path.join(store.anchors, "%d-%s" % (seq, h[:16]))
     txt = base + ".txt"
     if not os.path.exists(txt):
-        with open(txt, "w", encoding="utf-8") as f:
+        with open(txt, "w", encoding="utf-8", newline="\n") as f:  # the same bytes on every platform
             f.write(anchor_text(store, seq, h))
     methods = []
     url = tsa_url()
@@ -179,6 +193,7 @@ def run(store):
                     _fetch_freetsa_certs(store)
                 except Exception as exc:
                     errors["tsa_certs"] = str(exc)[:200]
+            _keep_certs(store, url)
             rfc3161(store, txt, base, url)
             done.append("rfc3161")
         except Exception as exc:

@@ -96,7 +96,9 @@ authorship log              # recent prompts, notes and confirmations; --all for
 authorship status           # authorship ✓ 214 | 12 unsealed | 3 to review, plus the classifier's state
 authorship review           # decide the labels the classifier was unsure of; --all to correct any automatic one
 authorship verify --anchors
-authorship seal             # anchor the current head now
+authorship seal             # anchor the current head now (also done at every session end)
+authorship export           # a bundle anyone can verify without the plugin (see Export)
+authorship sign setup       # sign your entries with your SSH key (see Signatures)
 authorship open             # the viewer, with its session secret
 authorship classifier       # who labels the entries, where the text goes, how to change it (--test checks it)
 authorship classifier use openrouter google/gemini-3.8-flash   # or: use claude haiku | use jev | use off | use auto
@@ -105,7 +107,7 @@ authorship restart          # restart the annotator and viewer, to pick up chang
 authorship doctor           # check every piece of the setup; --fix installs or starts what is missing
 ```
 
-`note`, `review`, `seal`, `open`, `restart`, `sign`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
+`note`, `review`, `seal`, `open`, `restart`, `sign`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status`, `verify` and `export` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 
@@ -143,6 +145,22 @@ From then on every prompt, note and confirmation carries an `ssh-keygen -Y sign`
 - **The key must sign without a prompt.** A key without a passphrase, or one loaded in `ssh-agent`. If signing fails, the entry is still recorded, unsigned, and the reason goes to `errors.log`.
 - **What it proves.** That the entry was made where your private key was. Anyone who controls your account and key could sign too; keep the key yours.
 - `authorship sign status` shows the key; `authorship sign off` stops signing (existing signatures stay valid).
+
+## Export
+
+For an attorney, an examiner or an expert who does not have the plugin:
+
+```bash
+authorship export           # authorship-exports/<date>-evidence-<head>/ and the same as a .zip
+```
+
+The bundle holds the ledger, every blob it cites, the anchors with the timestamp authority's certificates, `allowed_signers`, and:
+
+- `verify.py`: a standalone verifier, standard-library Python. It checks every file against `SHA256SUMS`, the chain, the cited content, each RFC 3161 timestamp (with `openssl`), each OpenTimestamps proof (with `ots`) and each signature (with `ssh-keygen`). What it cannot check is listed as unchecked, never passed silently.
+- `FORMAT.md`: the record format, enough to write an independent verifier.
+- `README.md`: what the bundle covers (entries, who wrote them, how far it is sealed, which keys signed).
+
+It refuses to export a record that does not verify. Seal first (`authorship seal`) so the bundle's last entries are timestamped too.
 
 ## Automatic classification
 
