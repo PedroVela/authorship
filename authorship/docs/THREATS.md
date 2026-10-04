@@ -22,7 +22,7 @@ The agent being audited (Claude) is also the most capable actor in the session. 
 
 - **Indirect execution.** Claude can write a script that touches `.authorship/` and then run it (`python tool.py`), or build the path at run time in ways the guard's text analysis does not see (base64, variables assembled across commands). The guard catches the obvious forms; the sandbox is the real barrier here. Enable it.
 - **Human actions.** Anything the human does in their own terminal is trusted. The human can also delete the repository. Anchors make a later rewrite detectable, not impossible.
-- **Unanchored history.** Until an entry is anchored, a party with write access to the files could rebuild the chain from that point with valid hashes. Seal often (`/authorship:seal`, or `AUTHORSHIP_ANCHOR=1`).
+- **Unanchored history.** Until an entry is anchored, a party with write access to the files could rebuild the chain from that point with valid hashes. Every session end seals the head when the session added work (`AUTHORSHIP_ANCHOR=0` turns it off); `authorship seal` seals at any time. The window is therefore the current session.
 - **Hooks off outside Claude Code.** Work done in a session where the plugin was disabled is not recorded; the ledger shows the gap but cannot fill it.
 - **Local readers.** Other processes running as the same OS user can read the ledger and the viewer secret. The viewer's read endpoints need no secret (they are bound to loopback and protected against DNS rebinding and cross-origin reads by the browser).
 - **Classifier error.** Automatic labels can be wrong.

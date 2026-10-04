@@ -3,6 +3,7 @@
 
     anchor.py run     [--project DIR]   anchor the current head now (foreground)
     anchor.py seal    [--project DIR]   the seal skill: anchor in the background, print what is anchored
+    anchor.py auto    [--project DIR]   at session end: like run, but silent and only when a method is available
     anchor.py upgrade [--project DIR]   `ots upgrade` pending stamps; write `complete` when attested
     anchor.py verify  [--project DIR]   check stored anchors (same as `ledger.py verify --anchors`)
 
@@ -284,6 +285,10 @@ def main(argv):
     cmd = args[0] if args else "run"
     if cmd == "run":
         print(json.dumps(run(store)))
+        return 0
+    if cmd == "auto":  # session end: no Anchor entry when nothing can timestamp it (no openssl, no ots)
+        if (tsa_url() != "off" and shutil.which("openssl")) or ots_available():
+            run(store)
         return 0
     if cmd == "seal":
         seq, h = ledger.read_head(store)

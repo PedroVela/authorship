@@ -281,7 +281,7 @@ sequenceDiagram
   participant T as Timestamp authority (RFC 3161)
   participant O as OpenTimestamps calendars
   participant B as Bitcoin blockchain
-  H->>A: authorship seal (or every session end, with AUTHORSHIP_ANCHOR=1)
+  H->>A: every session end (or authorship seal, any time)
   Note over A: hash of the ledger head, e.g. entry 14
   A->>T: the hash only
   T-->>A: signed timestamp, in seconds
@@ -297,12 +297,12 @@ sequenceDiagram
 
 What it proves: the whole record up to the sealed entry existed, exactly as it is, at that time. If anyone later rewrites any of those entries, even with a consistent new chain, `authorship verify --anchors` fails, because the recomputed head no longer matches the anchored one. The proofs are kept in `.authorship/anchors/`; commit them with the repository.
 
-To turn it on:
+It runs on its own at the end of every session that added work, so there is nothing to remember. Only the hash leaves your machine; the timestamp authority also sees your IP address and when your sessions end.
 
 ```bash
-pip install opentimestamps-client   # provides `ots`; without it, only the RFC 3161 timestamp is used
-authorship seal                     # seal now
-export AUTHORSHIP_ANCHOR=1          # optional: seal automatically at the end of every session
+authorship doctor --fix             # installs `ots`; without it, only the RFC 3161 timestamp is used
+authorship seal                     # seal now, without waiting for the session to end
+export AUTHORSHIP_ANCHOR=0          # turn off sealing at session end
 ```
 
 The status line and the Overview show how far the record is sealed (`sealed to #N`). Entries after that are protected by the hash chain, but not yet by an external timestamp.
