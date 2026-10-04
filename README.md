@@ -96,10 +96,9 @@ Add a note in your own name when something happened off the chat, for example an
 
 ### The viewer
 
-`authorship open` shows the record in your browser, in four tabs:
-- **Overview**: what you invented, and who contributed each element.
-- **Timeline**: what happened, in order.
-- **Map**: how the ideas connect, with a slider to replay how the record grew.
+`authorship open` shows the record in your browser. One line at the top says whether it can be trusted (intact, how far it is sealed, how much is signed), then three tabs:
+- **What you invented**: each claim, and who contributed each element.
+- **Timeline**: what happened, in order; open any entry for its text and code change.
 - **Review**: labels to check.
 
 ![Overview: a claim, the elements it rests on, and who contributed each](authorship/docs/images/viewer-overview.png)
@@ -353,7 +352,7 @@ Hashes differ in each run; `tests/validate_citations.py` checks that every one r
 | What you see | What to do |
 |---|---|
 | `refuses to run from Claude Code` | `note`, `review`, `seal` and `open` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
-| The viewer did not open | `authorship open`. The page explains itself under "How to read this"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
+| The viewer did not open | `authorship open`. The page explains itself under "Help"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
 | Something does not work | `authorship doctor` checks every piece and prints the fix; `authorship doctor --fix` applies the ones it can. |
 | Claude cannot look things up in the ledger | Restart Claude Code; the lookup server runs on the same `python3` as the hooks. `/mcp` inside Claude Code shows its state. |
 | `authorship: no .authorship/ here` | You are outside a recorded project; `cd` into it, or run `/authorship:init`. |

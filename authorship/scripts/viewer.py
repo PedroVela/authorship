@@ -30,7 +30,6 @@ import rules  # noqa: E402
 
 VIEWER_DIR = os.path.join(os.path.dirname(ledger.SCRIPTS_DIR), "viewer")
 DEFAULT_PORT = 47291
-STAGES_ONLY_ABOVE = 5000
 MAX_BODY = 64 * 1024
 STATIC_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
                 ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
@@ -111,7 +110,8 @@ def build_graph(store):
         "chain": {k: chain[k] for k in ("ok", "entries", "head", "broken_at", "reason", "sealed_upto", "unsealed")},
         "stages": stages, "entries": entries, "nodes": nodes, "edges": edges, "claims": claims, "review": review,
         "review_all": review_all, "inventions": invent, "classifier": cls,
-        "limits": {"stages_only_above": STAGES_ONLY_ABOVE},
+        "signatures": {"human": sum(1 for e in raw.values() if e.get("actor") == "human"),
+                       "signed": sum(1 for e in raw.values() if e.get("actor") == "human" and isinstance(e.get("sig"), dict))},
     }
 
 
@@ -215,6 +215,15 @@ class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body=b"", ctype="application/json", headers=None):
         if isinstance(body, str):
             body = body.encode("utf-8")
+        headers = dict(headers or {})
+        if len(body) > 16 * 1024 and "gzip" in (self.headers.get("Accept-Encoding") or ""):
+            # a 5,000-node graph is ~5 MB of JSON and ~0.3 MB gzipped; HTTP-inspecting antivirus (Avast's Web
+            # Shield, even on 127.0.0.1) slowed the plain one to minutes and reset it
+            import gzip
+
+            body = gzip.compress(body, 6)
+            headers["Content-Encoding"] = "gzip"
+            headers["Vary"] = "Accept-Encoding"
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -224,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
                          " connect-src 'self'; frame-ancestors 'none'")
-        for k, v in (headers or {}).items():
+        for k, v in headers.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
@@ -346,6 +355,7 @@ class ViewerServer(ThreadingHTTPServer):
     def __init__(self, store, port, secret):
         self.store, self.secret = store, secret
         ThreadingHTTPServer.__init__(self, ("127.0.0.1", port), Handler)
+
 
 
 def _write_private(path, text):

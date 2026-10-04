@@ -121,7 +121,7 @@ def tamper(store, seq, old, new):
 def test_graph_shape_and_etag(served):
     status, headers, g = served.get_json("/api/graph")
     assert status == 200
-    for key in ("nodes", "edges", "entries", "chain", "stages", "claims", "review", "etag", "limits"):
+    for key in ("nodes", "edges", "entries", "chain", "stages", "claims", "review", "etag", "signatures"):
         assert key in g, key
     assert headers["ETag"] == g["etag"]
     assert g["chain"]["ok"] is True and g["chain"]["entries"] == len(entries(served.store))
@@ -132,13 +132,24 @@ def test_graph_shape_and_etag(served):
     assert {"src": "4", "dst": "3.3", "type": "modifies", "source": "confirmed"} in g["edges"]
     labels = {(i["target_seq"], i["label"]) for i in g["review"]}
     assert (4, "milestone:conception_candidate") in labels and (4, "edge:4:rejects:3.1") in labels
-    assert g["limits"]["stages_only_above"] == 5000
+    assert g["signatures"] == {"human": sum(1 for e in entries(served.store) if e["actor"] == "human"), "signed": 0}
     status, headers, body = served.request("GET", "/api/graph", headers={"If-None-Match": g["etag"]})
     assert status == 304 and body == b""
     # a new entry changes the etag
     ledger.write_note(served.store, "a later remark")
     status, headers, g2 = served.get_json("/api/graph", headers={"If-None-Match": g["etag"]})
     assert status == 200 and g2["etag"] != g["etag"]
+
+
+def test_large_responses_are_gzipped_when_accepted(served):
+    import gzip
+    status, headers, body = served.request("GET", "/api/graph", headers={"Accept-Encoding": "gzip, deflate"})
+    assert status == 200 and headers.get("Content-Encoding") == "gzip" and headers.get("Vary") == "Accept-Encoding"
+    assert json.loads(gzip.decompress(body))["chain"]["ok"]
+    status, headers, body = served.request("GET", "/api/graph")  # no Accept-Encoding: plain
+    assert "Content-Encoding" not in headers and json.loads(body)["chain"]["ok"]
+    status, headers, _ = served.request("GET", "/app.css", headers={"Accept-Encoding": "gzip"})
+    assert "Content-Encoding" not in headers  # small files stay plain
 
 
 def test_foreign_host_is_rejected(served):
@@ -192,7 +203,7 @@ def test_static_files_and_traversal(served):
     csp = headers["Content-Security-Policy"]
     assert "script-src 'self'" in csp and "unsafe-eval" not in csp
     assert b"<script>" not in body  # no inline scripts (CSP would block them)
-    for path in ("/app.js", "/app.css", "/vendor/cytoscape.min.js"):
+    for path in ("/app.js", "/app.css"):
         assert served.request("GET", path)[0] == 200, path
     for path in ("/../scripts/ledger.py", "/vendor/../../scripts/ledger.py", "/..%2fscripts/ledger.py",
                  "/%2e%2e/scripts/ledger.py", "/vendor/../../tests/conftest.py", "//etc/passwd", "/nope.html"):
@@ -298,12 +309,6 @@ def open_page(browser, served, hash_="", with_secret=True, viewport=None):
 def click_tab(page, view):
     page.click("#tab-" + view)
     wait_js(page, "() => window.__authorshipPerf.view === '%s'" % view)
-    if view == "map":
-        wait_js(page, "() => window.__authorshipPerf.ready && !!window.__authorship.cy()", 30)
-
-
-def map_ids(page):
-    return set(page.evaluate("() => window.__authorship.cy().nodes().not('.lane, .lanelabel').map(n => n.id())"))
 
 
 def test_browser_overview_answers_who_contributed_what(browser, served):
@@ -311,19 +316,26 @@ def test_browser_overview_answers_who_contributed_what(browser, served):
     # the secret moved to sessionStorage and left the URL
     assert "k=" not in page.url
     assert page.evaluate("() => sessionStorage.getItem('authorship.viewer.secret')") == served.secret
-    assert page.inner_text("#chain-badge").startswith("✓ Record intact")
+    badge = page.inner_text("#chain-badge")
+    assert badge.startswith("✓ Record intact") and "not sealed yet" in badge and "signed" not in badge
     wait_js(page, "() => document.querySelector('.claim[data-claim=\"13\"]')")
-    kpis = page.inner_text("#kpis")
-    assert "Intact" in kpis and "Not sealed yet" in kpis and "3 of 4" in kpis and "Waiting for you\n2" in kpis
+    assert page.inner_text("#review-count") == "2"
+    assert not page.is_visible("#cls-strip")  # the default classifier needs no warning
     claim = page.inner_text('.claim[data-claim="13"]')
     assert "method that detects the absence of new transactions" in claim
     assert "From you 2" in claim.replace("\n", " ") and "From Claude 1" in claim.replace("\n", " ")
     assert "changes Claude’s #3.3" in claim and "tests prove it at #8" in claim and "changed by you at #4" in claim
     assert "TTL cache" in page.inner_text("#against")  # what came from Claude, stated plainly
     assert "Exploration" in page.inner_text("#stages-summary") and "Prototype" in page.inner_text("#stages-summary")
-    # the help dialog explains the four views
+    # an element's #N opens that entry in the Timeline
+    page.click('.claim[data-claim="13"] a:has-text("#4")')
+    wait_js(page, "() => document.querySelector('.tl-item[data-seq=\"4\"] .tl-detail')")
+    assert "view=timeline" in page.url and "open=4" in page.url
+    assert "changes #3.3" in page.inner_text('.tl-item[data-seq="4"] .tl-detail')
+    # the help dialog explains the three views and says who labels the entries
     page.click("#help-btn")
-    assert page.is_visible("#help") and "Timeline" in page.inner_text("#help")
+    help_text = page.inner_text("#help")
+    assert page.is_visible("#help") and "Timeline" in help_text and "Map" not in help_text
     page.keyboard.press("Escape")
     assert problems == []
     ctx.close()
@@ -359,29 +371,6 @@ def test_browser_timeline_tells_the_story(browser, served):
     ctx.close()
 
 
-def test_browser_map_focuses_on_the_claim(browser, served):
-    ctx, page, problems = open_page(browser, served, "view=map")
-    click_tab(page, "map")
-    ids = map_ids(page)
-    assert {"2", "3.3", "4", "11", "13"} <= ids and "8" in ids          # the lineage, and the tests that show it working
-    assert not ids & {"3.1", "5", "7", "9", "12"}                       # nothing the claim does not rest on
-    assert page.evaluate("() => window.__authorship.cy().getElementById('4').hasClass('you')")
-    assert page.evaluate("() => window.__authorship.cy().getElementById('3.3').hasClass('ai')")
-    page.evaluate("() => window.__authorship.cy().getElementById('4').emit('tap')")
-    wait_js(page, "() => /#4/.test(document.getElementById('map-detail').textContent)")
-    assert "changes #3.3" in page.inner_text("#map-detail")
-    # the whole record, then the slider back in time
-    page.select_option("#map-focus", "all")
-    wait_js(page, "() => window.__authorship.cy().getElementById('12').length === 1")
-    page.evaluate("""() => { const s = document.getElementById('map-slider'); s.value = '4'; s.dispatchEvent(new Event('input')); }""")
-    wait_js(page, "() => window.__authorship.cy().getElementById('5').length === 0")
-    assert max(int(i.split(".")[0]) for i in map_ids(page)) <= 4
-    assert "upto=4" in page.url and "focus=all" in page.url
-    assert page.inner_text("#map-legend").count("\n") >= 5
-    assert problems == []
-    ctx.close()
-
-
 def test_browser_review_records_answers(browser, served):
     store = served.store
     ctx, page, problems = open_page(browser, served, "view=review")
@@ -411,7 +400,7 @@ def test_browser_review_records_answers(browser, served):
     # keyboard: arrow keys move between tabs
     page.focus("#tab-review")
     page.keyboard.press("ArrowLeft")
-    wait_js(page, "() => document.getElementById('tab-map').getAttribute('aria-selected') === 'true'")
+    wait_js(page, "() => document.getElementById('tab-timeline').getAttribute('aria-selected') === 'true'")
     assert problems == []
     ctx.close()
 
@@ -438,13 +427,12 @@ def test_browser_badge_shows_broken_chain(browser, served):
     wait_js(page, "() => /broken at #11/.test(document.getElementById('chain-badge').textContent)", timeout=15)
     assert "bad" in page.get_attribute("#chain-badge", "class")
     assert page.is_visible("#broken-banner") and "#11 was changed" in page.inner_text("#broken-banner")
-    assert "Broken at #11" in page.inner_text("#kpis")
     ctx.close()
 
 
 def test_browser_phone_width_has_no_page_scroll(browser, served):
     ctx, page, problems = open_page(browser, served, viewport={"width": 380, "height": 800})
-    for view in ("overview", "timeline", "map", "review"):
+    for view in ("overview", "timeline", "review"):
         click_tab(page, view)
         time.sleep(0.2)
         assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"), view
@@ -538,18 +526,11 @@ def test_synthetic_generator_counts(project):
     assert [s["name"] for s in g["stages"]] == STAGES
 
 
-def test_browser_5000_nodes_budgets_and_5001_fallback(browser, project):
+def test_browser_5000_nodes_budgets(browser, project):
     store = synthetic_ledger(harness.init_store(project), 5000)
     s = Served(store)
     try:
-        ctx, page, problems = open_page(browser, s, "view=map&focus=all")
-        click_tab(page, "map")
-        perf = page.evaluate("() => ({layout: window.__authorshipPerf.layout, nodes: window.__authorshipPerf.nodes})")
-        print("\n5000-node map: %r" % perf)
-        assert perf["nodes"] == 5000 and perf["layout"] < 3000, perf
-        pan = page.evaluate("() => window.__authorshipPerf.panTest(1000)")
-        print("5000-node pan at zoom %.2f: %.1f fps (worst frame %d ms)" % (pan["zoom"], pan["fps"], pan["worstFrameMs"]))
-        assert pan["fps"] >= 30, pan
+        ctx, page, problems = open_page(browser, s)
         t0 = time.time()
         click_tab(page, "timeline")
         wait_js(page, "() => document.querySelectorAll('.tl-item').length >= 300 && !!document.querySelector('.more-row')", timeout=20)
@@ -558,19 +539,6 @@ def test_browser_5000_nodes_budgets_and_5001_fallback(browser, project):
         click_tab(page, "overview")
         wait_js(page, "() => document.querySelectorAll('.claim').length > 0")
         click_tab(page, "review")
-        assert problems == []
-        ctx.close()
-
-        # one more node: above graph.limits.stages_only_above, the Map is off; everything else works
-        ledger.write_note(store, "one more remark")
-        assert len(viewer.build_graph(store)["nodes"]) == 5001
-        ctx, page, problems = open_page(browser, s, "view=map")
-        wait_js(page, "() => !document.getElementById('notice').hidden")
-        assert "the Map is off" in page.inner_text("#notice") and "5001" in page.inner_text("#notice")
-        assert page.is_disabled("#tab-map")
-        wait_js(page, "() => document.getElementById('tab-overview').getAttribute('aria-selected') === 'true'")
-        assert page.evaluate("() => window.__authorship.cy()") is None
-        click_tab(page, "timeline")
         assert problems == []
         ctx.close()
     finally:
@@ -585,11 +553,11 @@ def test_browser_says_who_labels_and_how_to_change_it(browser, served):
     index.store_status(conn, ledger.verify(served.store), 0, classifier=info)
     conn.close()
     ctx, page, problems = open_page(browser, served)
-    wait_js(page, "() => /Jev/.test(document.getElementById('cls-overview').textContent)")
-    strip = page.inner_text("#cls-overview")
+    wait_js(page, "() => /Jev/.test(document.getElementById('cls-strip').textContent)")
+    strip = page.inner_text("#cls-strip")
     assert "Labeled automatically by Jev" in strip and "TypeSafe AI" in strip
-    assert "third" in page.get_attribute("#cls-overview", "class")
-    page.click("#cls-overview button:has-text('How to change it')")
+    assert "third" in page.get_attribute("#cls-strip", "class") and page.is_visible("#cls-strip")
+    page.click("#cls-strip button:has-text('How to change it')")
     assert page.is_visible("#setup")
     setup = page.inner_text("#setup")
     assert "export TYPESAFE_API_KEY" in setup and "authorship restart" in setup and "authorship classifier --test" in setup
@@ -601,10 +569,13 @@ def test_browser_says_who_labels_and_how_to_change_it(browser, served):
         classifier.describe_backend(classifier.ClaudeCLI()), state="on"))
     conn.close()
     page.reload()
-    wait_js(page, "() => /Claude/.test(document.getElementById('cls-overview').textContent)")
-    assert "No new party receives your text" in page.inner_text("#cls-overview")
-    click_tab(page, "review")
-    assert "Labeled automatically by Claude" in page.inner_text("#cls-review")
+    wait_js(page, "() => /Claude/.test(document.getElementById('help-classifier').textContent)")
+    assert not page.is_visible("#cls-strip")  # nothing to warn about
+    page.click("#help-btn")
+    assert "No new party receives your text" in page.inner_text("#help-classifier")
+    page.click("#setup-btn")
+    assert page.is_visible("#setup") and not page.is_visible("#help")
+    page.keyboard.press("Escape")
     assert problems == []
     ctx.close()
 

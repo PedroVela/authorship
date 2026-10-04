@@ -1,11 +1,10 @@
 /* Authorship record viewer. Plain ES2019, no build step, no network beyond this origin.
  *
- * Four views, in plain language:
- *   Overview  what you invented: claims, the elements they rest on, who contributed each
- *   Timeline  what happened, in order, grouped by stage
- *   Map       how the ideas connect (problems, ideas, decisions and claims, Claude's work), with a time slider
- *   Review    labels the classifier was unsure of, for the human to answer
- * State lives in the URL hash (#view=map&focus=13&upto=40). The only write is POST /api/confirm.
+ * Three views, in plain language:
+ *   What you invented  claims, the elements they rest on, who contributed each
+ *   Timeline           what happened, in order, grouped by stage; open a row for its text and code change
+ *   Review             labels the classifier was unsure of, for the human to answer
+ * State lives in the URL hash (#view=timeline&tl=all&q=...&open=12). The only write is POST /api/confirm.
  * All text from the ledger is inserted with textContent, never as HTML.
  */
 (function () {
@@ -33,13 +32,8 @@
   // ------------------------------------------------------------------------------------------
   // Constants and state
   var POLL_MS = 4000;
-  var MAP_MAX = 5000;           // above this many nodes the Map is off (Overview, Timeline and Review still work)
-  var BIG = 1500;               // above this, cytoscape performance options
   var TL_PAGE = 400;            // timeline rows rendered per page
-  var VIEWS = ['overview', 'timeline', 'map', 'review'];
-  var LANES = ['Problems', 'Ideas and options', 'Decisions and claims', "Claude's work and tests"];
-  var LANE_OF = { issue: 0, position: 1, remark: 1, response: 1, decision: 2, claim: 2, action: 3, argument: 3 };
-  var LINEAGE = { derived_from: 1, modifies: 1, refines: 1, responds_to: 1 };
+  var VIEWS = ['overview', 'timeline', 'review'];
   var KIND_OF_TAG = { '#problem': 'problem', '#idea': 'idea', '#hypothesis': 'hypothesis', '#decision': 'decision',
     '#claim': 'claim', '#discard': 'discard' };
   var SAY_KIND = { problem: 'stated the problem', idea: 'proposed an idea', hypothesis: 'stated a hypothesis',
@@ -63,30 +57,11 @@
   var REL_IN = { derived_from: 'is built on by', refines: 'is extended by', modifies: 'is changed by',
     responds_to: 'is answered by', implements: 'is implemented by', supports: 'is shown working by',
     objects_to: 'has failing tests at', rejects: 'is rejected by', supersedes: 'is replaced by', discards: 'is discarded by' };
-  var EDGE_CLASS = { modifies: 'changed', refines: 'changed', rejects: 'against', objects_to: 'against', discards: 'against',
-    implements: 'work', supports: 'work' };
 
-  var S = { view: 'overview', focus: '', upto: 0, tl: 'key', q: '', open: null, sel: null };
-  var G = null, M = null, etag = null, cy = null, cyKey = null, playing = null, tlShown = TL_PAGE;
-  var perf = window.__authorshipPerf = { ready: false, layout: null, renders: 0, view: null };
-  // For the scale test: pan the Map for `ms` milliseconds and report the frame rate.
-  perf.panTest = function (ms) {
-    return new Promise(function (resolve) {
-      if (!cy) { resolve(null); return; }
-      var frames = 0, worst = 0, t0 = performance.now(), last = t0, dir = 1;
-      function frame(now) {
-        frames++;
-        worst = Math.max(worst, now - last);
-        last = now;
-        cy.panBy({ x: 6 * dir, y: 2 * dir });
-        if (frames % 60 === 0) dir = -dir;
-        if (now - t0 < ms) requestAnimationFrame(frame);
-        else resolve({ fps: frames * 1000 / (now - t0), worstFrameMs: Math.round(worst), zoom: cy.zoom(), frames: frames });
-      }
-      requestAnimationFrame(frame);
-    });
-  };
-  window.__authorship = { cy: function () { return cy; }, model: function () { return M; }, state: S };
+  var S = { view: 'overview', tl: 'key', q: '', open: null };
+  var G = null, M = null, etag = null, tlShown = TL_PAGE;
+  var perf = window.__authorshipPerf = { ready: false, renders: 0, view: null };
+  window.__authorship = { model: function () { return M; }, state: S };
 
   // ------------------------------------------------------------------------------------------
   // DOM helpers (text only)
@@ -129,16 +104,14 @@
     var p = new URLSearchParams(location.hash.replace(/^#/, ''));
     var v = p.get('view');
     S.view = VIEWS.indexOf(v) >= 0 ? v : 'overview';
-    S.focus = p.get('focus') || '';
-    S.upto = parseInt(p.get('upto') || '0', 10) || 0;
+    S.open = parseInt(p.get('open') || '', 10) || null;
     S.tl = p.get('tl') === 'all' ? 'all' : 'key';
     S.q = p.get('q') || '';
   }
   function writeHash() {
     var p = new URLSearchParams();
     p.set('view', S.view);
-    if (S.focus) p.set('focus', S.focus);
-    if (S.upto && M && S.upto < M.maxSeq) p.set('upto', String(S.upto));
+    if (S.view === 'timeline' && S.open) p.set('open', String(S.open));
     if (S.tl !== 'key') p.set('tl', S.tl);
     if (S.q) p.set('q', S.q);
     history.replaceState(null, '', location.pathname + location.search + '#' + p.toString());
@@ -281,9 +254,11 @@
   function renderHeader() {
     $('project').textContent = G.project || '';
     var c = G.chain, b = $('chain-badge');
+    var sg = G.signatures || {};
     if (c.ok) {
       b.className = 'badge ok';
-      b.textContent = '✓ Record intact · ' + c.entries + ' entries · ' + (c.sealed_upto ? 'sealed to #' + c.sealed_upto : 'not sealed yet');
+      b.textContent = '✓ Record intact · ' + c.entries + ' entries · ' + (c.sealed_upto ? 'sealed to #' + c.sealed_upto : 'not sealed yet') +
+        (sg.signed ? ' · ' + sg.signed + ' of ' + sg.human + ' signed' : '');
       $('broken-banner').hidden = true;
     } else {
       b.className = 'badge bad';
@@ -297,19 +272,16 @@
     rc.textContent = String(n);
     rc.hidden = !n;
     rc.setAttribute('aria-label', n + ' waiting');
-    $('sync').textContent = 'updated ' + new Date().toLocaleTimeString();
-    var big = G.nodes.length > G.limits.stages_only_above;
-    var nt = $('notice');
-    nt.hidden = !big;
-    if (big) nt.textContent = 'This record has ' + G.nodes.length + ' entries and links, too many to draw: the Map is off. Overview, Timeline and Review work as usual.';
-    $('tab-map').disabled = big;
+    b.title = 'updated ' + new Date().toLocaleTimeString();
   }
 
   // ------------------------------------------------------------------------------------------
-  // Who labels the entries (shown on Overview and Review)
-  function renderClassifier(hostId) {
-    var c = G.classifier || {}, host = clear($(hostId)), cls = 'cls-strip';
-    var how = el('button', { class: 'link-btn', type: 'button', onclick: function () { var d = $('setup'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); } }, 'How to change it');
+  // Who labels the entries: a strip under the tabs only when it needs attention (text going to another provider,
+  // labels off or failing); the Help dialog always says it.
+  function openDialog(id) { var d = $(id); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); }
+  function renderClassifier() {
+    var c = G.classifier || {}, host = clear($('cls-strip')), cls = 'cls-strip';
+    var how = el('button', { class: 'link-btn', type: 'button', onclick: function () { openDialog('setup'); } }, 'How to change it');
     var msg;
     if (c.state === 'off') { cls += ' off'; msg = [el('strong', null, 'Automatic labels are off.'), ' Only tags you type and the deterministic rules label entries.']; }
     else if (c.state === 'no-backend') { cls += ' err'; msg = [el('strong', null, 'Nothing is labeling entries.'), ' No backend is usable: no Jev or OpenRouter key, and the claude command was not found.']; }
@@ -327,32 +299,15 @@
     host.appendChild(el('span', null, msg));
     if (c.labeled != null) host.appendChild(el('span', { class: 'muted' }, c.labeled + ' entries labeled so far.'));
     host.appendChild(how);
+    host.hidden = !/third|err/.test(cls);  // "off" was the user's own choice: the Help dialog says it
+    var hc = clear($('help-classifier'));
+    msg.forEach(function (m) { hc.appendChild(typeof m === 'string' ? document.createTextNode(m) : m.cloneNode(true)); });
   }
 
   // ------------------------------------------------------------------------------------------
   // Overview
   function renderOverview() {
-    renderClassifier('cls-overview');
-    var c = G.chain, inv = G.inventions || [];
-    var tot = { human: 0, mixed: 0, ai: 0 };
-    inv.forEach(function (x) { tot.human += x.counts.human; tot.mixed += x.counts.mixed; tot.ai += x.counts.ai; });
-    var all = tot.human + tot.mixed + tot.ai;
-    var k = clear($('kpis'));
-    function tile(cls, label, value, note, extra) {
-      return el('div', { class: 'kpi ' + cls }, el('div', { class: 'k-label' }, label), el('div', { class: 'k-value' }, value),
-        el('div', { class: 'k-note' }, note), extra || null);
-    }
-    k.appendChild(c.ok ? tile('good', 'Record', 'Intact', c.entries + ' entries, none changed since written')
-                       : tile('bad', 'Record', 'Broken at #' + c.broken_at, c.reason || 'an entry was changed'));
-    k.appendChild(tile(c.sealed_upto ? 'good' : '', 'External timestamp', c.sealed_upto ? 'Sealed to #' + c.sealed_upto : 'Not sealed yet',
-      c.sealed_upto ? c.unsealed + ' newer entries not sealed' : 'run  authorship seal  in your terminal'));
-    k.appendChild(tile('', 'Elements from you', all ? (tot.human + tot.mixed) + ' of ' + all : '—',
-      all ? (tot.mixed ? tot.mixed + ' of them change something Claude proposed' : 'across ' + inv.length + ' claim' + (inv.length === 1 ? '' : 's')) : 'no claim yet'));
-    var waiting = G.review.length;
-    k.appendChild(tile(waiting ? 'attn' : 'good', 'Waiting for you', waiting ? String(waiting) : 'Nothing',
-      waiting ? 'labels to check' : 'all labels decided or automatic',
-      waiting ? el('button', { class: 'link-btn', type: 'button', onclick: function () { go('review'); } }, 'Open Review') : null));
-
+    var inv = G.inventions || [];
     var box = clear($('inventions'));
     if (!inv.length) {
       box.appendChild(el('div', { class: 'empty' },
@@ -373,7 +328,7 @@
     if (against.length) {
       ab.appendChild(el('div', { class: 'card against' },
         el('h2', null, 'What came from Claude'),
-        el('p', { class: 'muted' }, 'Stated plainly, because an honest record carries more weight. Elements Claude proposed, and replies where it introduced something you did not ask for:'),
+        el('p', { class: 'muted' }, 'Elements Claude proposed, and replies where it added something you did not ask for. Stated plainly: an honest record carries more weight.'),
         el('ul', null, against.map(function (a) {
           return el('li', null, cite(a.node), ' ', short(a.text, 160),
             a.changed && a.changed.length ? el('span', { class: 'muted' }, ' — changed by you at #' + a.changed.join(', #')) : null);
@@ -415,14 +370,24 @@
         e.evidence.forEach(function (s) { extra.push(el('span', { class: 'lbl good' }, 'tests prove it at #' + s)); });
         return el('li', null, whoChip(e.origin === 'human' ? 'you' : e.origin),
           el('div', { class: 'el-text' }, e.text, extra.length ? el('div', { class: 'el-extra' }, extra) : null),
-          el('a', { href: '#view=map&focus=' + encodeURIComponent(x.id), onclick: function (ev) { ev.preventDefault(); S.focus = x.id; S.sel = e.node; go('map'); } }, cite(e.node)));
+          entryLink(e.node));
       })));
     } else {
       card.appendChild(el('p', { class: 'muted' }, 'No element is linked to this claim yet. Links appear as the classifier reads the record.'));
     }
-    card.appendChild(el('p', { class: 'links-note' }, 'Links used: ' + x.links + '. ',
-      el('a', { href: '#view=map&focus=' + encodeURIComponent(x.id), onclick: function (ev) { ev.preventDefault(); S.focus = x.id; go('map'); } }, 'See it on the Map')));
     return card;
+  }
+
+  // #N, opening that entry in the Timeline
+  function entryLink(id) {
+    var seq = nodeSeq(id);
+    return el('a', { href: '#view=timeline&tl=all&open=' + seq, onclick: function (ev) { ev.preventDefault(); openEntry(seq); } }, cite(id));
+  }
+  function openEntry(seq) {
+    S.open = seq; S.tl = 'all'; S.q = ''; tlShown = Math.max(tlShown, seq + TL_PAGE);
+    go('timeline'); syncControls();
+    var t = document.querySelector('.tl-item[data-seq="' + seq + '"]');
+    if (t) t.scrollIntoView({ block: 'center' });
   }
 
   // ------------------------------------------------------------------------------------------
@@ -496,11 +461,11 @@
       })));
     }
     var btn = el('button', { class: 'tl-row', type: 'button', 'aria-expanded': S.open === e.seq ? 'true' : 'false',
-      onclick: function () { S.open = S.open === e.seq ? null : e.seq; renderTimeline(); } },
+      onclick: function () { S.open = S.open === e.seq ? null : e.seq; writeHash(); renderTimeline(); } },
       el('span', { class: 'tl-seq' }, '#' + e.seq), main,
       el('span', { class: 'tl-labels' }, labels));
     li.appendChild(btn);
-    if (S.open === e.seq) { var det = el('div', { class: 'tl-detail' }); li.appendChild(det); fillDetail(det, String(e.seq), false); }
+    if (S.open === e.seq) { var det = el('div', { class: 'tl-detail' }); li.appendChild(det); fillDetail(det, String(e.seq)); }
     return li;
   }
 
@@ -516,15 +481,12 @@
   }
 
   // ------------------------------------------------------------------------------------------
-  // Detail of one entry or node (Timeline row, Map side panel)
-  function fillDetail(box, id, inMap) {
+  // Detail of one entry (an open Timeline row)
+  function fillDetail(box, id) {
     clear(box);
     var seq = nodeSeq(id), e = M.entry[seq], n = M.node[id];
     if (!e) { box.appendChild(el('p', { class: 'muted' }, 'Entry #' + id + ' is not in the record.')); return; }
-    var d = describe(e);
-    var body = el('div', { class: 'detail-body' });
-    var title = n && n.option != null ? 'Option ' + n.option + ' of Claude’s reply #' + seq : (d.who === 'sys' ? d.say : null);
-    body.appendChild(el('h3', null, title || [whoChip(d.who === 'you' ? 'you' : 'ai'), ' ', d.say]));
+    var body = el('div', { class: 'detail-body' });  // the row above already says who did what, with its labels
     var facts = el('dl', { class: 'facts' });
     function fact(k, v) { if (v) { facts.appendChild(el('dt', null, k)); facts.appendChild(el('dd', null, v)); } }
     fact('Entry', '#' + id);
@@ -535,10 +497,6 @@
     fact('Command', e.command);
     fact('Error', e.error);
     body.appendChild(facts);
-    var kk = kindOf(e);
-    var chips = labelChips(n, kk && kk.kind);
-    if (kk) chips.unshift(el('span', { class: 'lbl' + (kk.auto ? ' auto' : ''), title: kk.auto ? 'set automatically by the classifier' : 'tag typed by you' }, kk.kind));
-    if (chips.length) body.appendChild(el('div', { class: 'el-extra' }, chips));
     var textBox = el('pre', { class: 'text' }, n && n.option != null ? n.label : (e.preview || ''));
     if (!(n && n.option != null) && (e.text_len || 0) > 0) body.appendChild(textBox);
     var rels = el('ul', { class: 'rel' });
@@ -546,8 +504,8 @@
       return x.source === 'auto' ? el('span', { class: 'muted' }, ' (automatic)') :
         x.source === 'annotation' ? el('span', { class: 'muted' }, ' (suggested; waiting for you in Review)') : null;
     }
-    (M.out[id] || []).forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_OUT[x.type] || x.type, ' ', relLink(x.dst, inMap), how(x))); });
-    (M.inn[id] || []).forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_IN[x.type] || x.type, ' ', relLink(x.src, inMap), how(x))); });
+    (M.out[id] || []).forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_OUT[x.type] || x.type, ' ', relLink(x.dst), how(x))); });
+    (M.inn[id] || []).forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_IN[x.type] || x.type, ' ', relLink(x.src), how(x))); });
     if (rels.childNodes.length) { body.appendChild(el('h3', null, 'Links')); body.appendChild(rels); }
     box.appendChild(body);
     if (!(n && n.option != null) && (e.text_len || 0) > 0) {
@@ -569,13 +527,10 @@
       }).catch(function () { pre.textContent = 'The change could not be loaded.'; });
     }
   }
-  function relLink(id, inMap) {
+  function relLink(id) {
     var n = M.node[id];
     var label = '#' + id + (n ? ' (' + (n.author === 'human' ? 'you' : 'Claude') + '): ' + short(n.label, 70) : '');
-    return el('a', { href: '#', onclick: function (ev) {
-      ev.preventDefault();
-      if (inMap) { S.sel = id; selectInMap(id); } else { S.open = nodeSeq(id); renderTimeline(); var t = document.querySelector('.tl-item[data-seq="' + nodeSeq(id) + '"]'); if (t) t.scrollIntoView({ block: 'center' }); }
-    } }, label);
+    return el('a', { href: '#view=timeline&tl=all&open=' + nodeSeq(id), onclick: function (ev) { ev.preventDefault(); openEntry(nodeSeq(id)); } }, label);
   }
   function diffLines(a, b) {
     var A = String(a).split('\n'), B = String(b).split('\n');
@@ -596,225 +551,6 @@
   }
 
   // ------------------------------------------------------------------------------------------
-  // Map
-  function focusOptions() {
-    var sel = clear($('map-focus'));
-    (G.inventions || []).forEach(function (x) { sel.appendChild(el('option', { value: x.id }, 'Claim #' + x.id + ': ' + short(x.text, 60))); });
-    sel.appendChild(el('option', { value: 'key' }, 'Key entries of the whole record'));
-    sel.appendChild(el('option', { value: 'all' }, 'Everything, including every reply and tool call'));
-    if (!S.focus) S.focus = (G.inventions && G.inventions.length) ? G.inventions[0].id : 'key';
-    sel.value = S.focus;
-    if (sel.value !== S.focus) { S.focus = 'key'; sel.value = 'key'; }
-  }
-
-  function lineageSet(root) {
-    var curated = G.edges.some(function (x) { return x.source === 'confirmed' || x.source === 'auto'; });
-    var ok = function (x) { return LINEAGE[x.type] && (!curated || x.source === 'confirmed' || x.source === 'auto'); };
-    var seen = {}, stack = [root];
-    seen[root] = 1;
-    while (stack.length) {
-      var id = stack.pop();
-      (M.out[id] || []).forEach(function (x) { if (ok(x) && !seen[x.dst]) { seen[x.dst] = 1; stack.push(x.dst); } });
-    }
-    return { set: seen, ok: ok };
-  }
-
-  function mapSelection() {
-    var nodes = [], ids = {}, edgeOk;
-    if (S.focus === 'all') {
-      M.nodes.forEach(function (n) { ids[n.id] = 1; });
-      edgeOk = function () { return true; };
-    } else if (S.focus === 'key') {
-      M.nodes.forEach(function (n) {
-        if (n.ibis === 'response' && !(n.milestones || []).some(function (ms) { return ms.type === 'ai_origin_element'; })) return;
-        if (n.ibis === 'action') return;
-        ids[n.id] = 1;
-      });
-      edgeOk = function (x) { return x.type !== 'responds_to' || x.source !== 'rule'; };
-    } else {
-      var lin = lineageSet(S.focus);
-      Object.keys(lin.set).forEach(function (id) { ids[id] = 1; });
-      Object.keys(lin.set).forEach(function (id) {  // the tests that show an element working, or failing against it
-        (M.inn[id] || []).forEach(function (x) { if ((x.type === 'supports' || x.type === 'objects_to' || x.type === 'rejects') && M.node[x.src]) ids[x.src] = 1; });
-      });
-      edgeOk = function (x) { return lin.ok(x) || x.type === 'supports' || x.type === 'objects_to' || x.type === 'rejects' || x.type === 'discards'; };
-    }
-    var upto = S.upto || M.maxSeq;
-    Object.keys(ids).forEach(function (id) { var n = M.node[id]; if (n && n.seq <= upto) nodes.push(n); });
-    nodes.sort(function (a, b) { return a.seq - b.seq || (a.id < b.id ? -1 : 1); });
-    var keep = {};
-    nodes.forEach(function (n) { keep[n.id] = 1; });
-    var edges = G.edges.filter(function (x) { return keep[x.src] && keep[x.dst] && edgeOk(x); });
-    return { nodes: nodes, edges: edges };
-  }
-
-  function mapElements(selN, selE) {
-    var cols = {}, colN = 0, slot = {}, laneDepth = [1, 1, 1, 1];
-    selN.forEach(function (n) {
-      if (!(n.seq in cols)) cols[n.seq] = colN++;
-      var lane = LANE_OF[n.ibis] != null ? LANE_OF[n.ibis] : 1;
-      var key = cols[n.seq] + ':' + lane;
-      slot[n.id] = slot[key] = (slot[key] || 0) + 1;
-      laneDepth[lane] = Math.max(laneDepth[lane], slot[key]);
-    });
-    var COLW = selN.length > BIG ? 70 : 170, ROWH = 84, top = [], y = 0;
-    for (var l = 0; l < 4; l++) { top.push(y); y += laneDepth[l] * ROWH + 36; }
-    var left = -40, right = 60 + Math.max(0, colN - 1) * COLW + 100, width = right - left;
-    mapElements.size = { w: width, h: y };
-    var els = [];
-    for (l = 0; l < 4; l++) {
-      var h = laneDepth[l] * ROWH + 26;
-      els.push({ group: 'nodes', data: { id: '__lane' + l, w: width, h: h },
-        position: { x: left + width / 2, y: top[l] + h / 2 }, classes: 'lane', selectable: false, grabbable: false, locked: true });
-      els.push({ group: 'nodes', data: { id: '__lanelabel' + l, label: LANES[l] },
-        position: { x: left + 8, y: top[l] + 12 }, classes: 'lanelabel', selectable: false, grabbable: false, locked: true });
-    }
-    selN.forEach(function (n) {
-      var lane = LANE_OF[n.ibis] != null ? LANE_OF[n.ibis] : 1;
-      var cls = [n.author === 'human' ? 'you' : 'ai'];
-      if (isDead(n)) cls.push('dead');
-      if (n.ibis === 'claim') cls.push('claim');
-      var tag = n.author === 'human' ? 'You' : 'Claude';
-      els.push({ group: 'nodes', data: { id: n.id, label: '#' + n.id + ' ' + tag + '\n' + short(n.label, 46) },
-        position: { x: 60 + cols[n.seq] * COLW, y: top[lane] + (slot[n.id] - 1) * ROWH + 40 }, classes: cls.join(' ') });
-    });
-    selE.forEach(function (x, i) {
-      els.push({ group: 'edges', data: { id: 'e' + i, source: x.src, target: x.dst, rel: REL_OUT[x.type] || x.type },
-        classes: (EDGE_CLASS[x.type] || 'built') + (x.source === 'auto' ? ' auto' : '') });
-    });
-    return els;
-  }
-
-  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
-  function renderMap(force) {
-    if (G.nodes.length > G.limits.stages_only_above) return;
-    if (typeof window.cytoscape !== 'function') { setTimeout(function () { renderMap(force); }, 50); return; }
-    focusOptions();
-    var slider = $('map-slider');
-    slider.max = String(M.maxSeq);
-    if (!S.upto || S.upto > M.maxSeq) S.upto = M.maxSeq;
-    slider.value = String(S.upto);
-    $('map-slider-out').textContent = '#' + S.upto + (S.upto === M.maxSeq ? ' (latest)' : ' of ' + M.maxSeq);
-    var key = [G.etag, S.focus, S.upto].join('|');
-    if (cy && key === cyKey && !force) return;
-    cyKey = key;
-    var t0 = performance.now();
-    var sel = mapSelection();
-    var els = mapElements(sel.nodes, sel.edges);
-    var big = sel.nodes.length > BIG;
-    var you = cssVar('--you'), ai = cssVar('--ai'), ink = cssVar('--ink'), ink2 = cssVar('--ink-2'), surf = cssVar('--surface'),
-      surf2 = cssVar('--surface-2'), muted = cssVar('--muted'), crit = cssVar('--critical'), good = cssVar('--good');
-    if (cy) cy.destroy();
-    // size the canvas to the drawing, so a small lineage is not lost in empty space
-    var box = $('map'), avail = box.parentNode.clientWidth || 900, sz = mapElements.size;
-    var scale = Math.min(1.3, avail / Math.max(1, sz.w));
-    box.style.height = Math.max(320, Math.min(680, Math.round(sz.h * Math.max(scale, 0.35) + 60))) + 'px';
-    cy = window.cytoscape({
-      container: $('map'), elements: els, layout: { name: 'preset' },
-      minZoom: 0.05, maxZoom: 3, wheelSensitivity: 0.3, boxSelectionEnabled: false,
-      hideEdgesOnViewport: big, textureOnViewport: big, pixelRatio: big ? 1 : 'auto',
-      style: [
-        { selector: 'node', style: { 'width': 24, 'height': 24, 'label': 'data(label)', 'font-size': 12, 'color': ink2,
-          'text-wrap': 'wrap', 'text-max-width': 132, 'text-background-color': surf, 'text-background-opacity': 0.85, 'text-background-padding': 2, 'text-valign': 'bottom', 'text-margin-y': 5, 'min-zoomed-font-size': big ? 9 : 0,
-          'border-width': 2, 'border-color': surf } },
-        { selector: 'node.you', style: { 'shape': 'ellipse', 'background-color': you } },
-        { selector: 'node.ai', style: { 'shape': 'round-rectangle', 'background-color': ai } },
-        { selector: 'node.claim', style: { 'width': 30, 'height': 30, 'border-width': 3, 'border-color': ink, 'font-weight': 'bold', 'color': ink } },
-        { selector: 'node.dead', style: { 'background-opacity': 0.25, 'border-style': 'dashed', 'border-color': muted, 'border-width': 2 } },
-        { selector: 'node.lane', style: { 'shape': 'rectangle', 'width': 'data(w)', 'height': 'data(h)', 'background-color': surf2,
-          'background-opacity': 0.7, 'border-width': 0, 'label': '', 'events': 'no', 'z-index': 0 } },
-        { selector: 'node.lanelabel', style: { 'width': 1, 'height': 1, 'background-opacity': 0, 'border-width': 0, 'label': 'data(label)',
-          'text-valign': 'center', 'text-halign': 'right', 'font-size': 12, 'font-weight': 'bold', 'color': muted,
-          'text-background-opacity': 0, 'events': 'no', 'text-wrap': 'none', 'min-zoomed-font-size': 0 } },
-        { selector: 'edge', style: { 'width': 2, 'line-color': muted, 'target-arrow-color': muted, 'target-arrow-shape': 'triangle',
-          'arrow-scale': 1, 'curve-style': big ? 'haystack' : 'bezier', 'opacity': 0.9 } },
-        { selector: 'edge.changed', style: { 'line-color': '#7a5cd6', 'target-arrow-color': '#7a5cd6', 'width': 2.5 } },
-        { selector: 'edge.against', style: { 'line-color': crit, 'target-arrow-color': crit, 'line-style': 'dashed' } },
-        { selector: 'edge.work', style: { 'line-color': good, 'target-arrow-color': good } },
-        { selector: 'node:selected', style: { 'border-color': cssVar('--focus'), 'border-width': 4 } },
-        { selector: '.faded', style: { 'opacity': 0.15 } }
-      ]
-    });
-    cy.on('tap', 'node', function (ev) { if (!ev.target.hasClass('lane') && !ev.target.hasClass('lanelabel')) { S.sel = ev.target.id(); showSel(); } });
-    var tip = $('map-tip');
-    function showTip(ev, textFn) {
-      var p = ev.renderedPosition || ev.target.renderedMidpoint();
-      tip.textContent = textFn();
-      tip.style.left = Math.round(p.x + 14) + 'px';
-      tip.style.top = Math.round(p.y + 10) + 'px';
-      tip.hidden = false;
-    }
-    cy.on('mouseover', 'node', function (ev) {
-      var t = ev.target;
-      if (t.hasClass('lane') || t.hasClass('lanelabel')) return;
-      var n = M.node[t.id()];
-      showTip(ev, function () { return '#' + t.id() + ' · ' + (n.author === 'human' ? 'You' : 'Claude') + ': ' + short(n.label, 160); });
-    });
-    cy.on('mouseover', 'edge', function (ev) {
-      var x = ev.target.data();
-      showTip(ev, function () { return '#' + x.source + ' ' + x.rel + ' #' + x.target + (ev.target.hasClass('auto') ? ' (automatic)' : ''); });
-    });
-    cy.on('mouseout', 'node, edge', function () { tip.hidden = true; });
-    cy.on('viewport', function () { tip.hidden = true; });
-    cy.on('tap', function (ev) { if (ev.target === cy) { S.sel = null; cy.elements().removeClass('faded'); fillLegendDetail(); } });
-    cy.fit(undefined, 36);
-    if (cy.zoom() > 1.3) { cy.zoom(1.3); cy.center(); }
-    if (S.sel && cy.getElementById(S.sel).length) showSel(); else fillLegendDetail();
-    perf.layout = performance.now() - t0;
-    perf.ready = true;
-    perf.renders++;
-    perf.nodes = sel.nodes.length;
-  }
-  function selectInMap(id) { if (cy && cy.getElementById(id).length) { S.sel = id; showSel(); cy.animate({ center: { eles: cy.getElementById(id) } }, { duration: 250 }); } }
-  function showSel() {
-    if (!cy) return;
-    cy.elements().unselect();
-    var n = cy.getElementById(S.sel);
-    if (!n.length) return;
-    n.select();
-    var hood = n.closedNeighborhood();
-    cy.elements().not(hood).not('.lane').not('.lanelabel').addClass('faded');
-    hood.removeClass('faded');
-    fillDetail($('map-detail'), S.sel, true);
-  }
-  function fillLegendDetail() {
-    var d = clear($('map-detail'));
-    var x = (G.inventions || []).filter(function (i) { return i.id === S.focus; })[0];
-    if (x) {
-      d.appendChild(el('h3', null, 'Claim #' + x.id));
-      d.appendChild(el('p', null, x.text));
-      d.appendChild(el('p', { class: 'muted' }, 'Shown: the claim, every element it is built from (links: ' + x.links + '), and the tests that show them working or failing. Select a shape to read it.'));
-    } else {
-      d.appendChild(el('p', { class: 'muted' }, 'Select a shape to read its entry and its links.'));
-    }
-  }
-
-  function renderLegend() {
-    var lg = clear($('map-legend'));
-    lg.appendChild(el('li', null, el('i', { class: 'sym you', 'aria-hidden': 'true' }), 'You'));
-    lg.appendChild(el('li', null, el('i', { class: 'sym ai', 'aria-hidden': 'true' }), 'Claude'));
-    lg.appendChild(el('li', null, el('i', { class: 'sym dead', 'aria-hidden': 'true' }), 'Discarded or rejected'));
-    lg.appendChild(el('li', null, el('span', { class: 'line' }), 'Builds on'));
-    lg.appendChild(el('li', null, el('span', { class: 'line changed' }), 'Changes'));
-    lg.appendChild(el('li', null, el('span', { class: 'line against' }), 'Rejects, or tests fail'));
-    lg.appendChild(el('li', null, el('span', { class: 'line work' }), 'Implements, or tests pass'));
-  }
-
-  function togglePlay() {
-    if (playing) { clearInterval(playing); playing = null; $('map-play').textContent = 'Play'; return; }
-    if (S.upto >= M.maxSeq) S.upto = 1;
-    $('map-play').textContent = 'Pause';
-    var step = Math.max(1, Math.round(M.maxSeq / 60));
-    playing = setInterval(function () {
-      S.upto = Math.min(M.maxSeq, S.upto + step);
-      writeHash();
-      renderMap();
-      if (S.upto >= M.maxSeq) togglePlay();
-    }, 250);
-  }
-
-  // ------------------------------------------------------------------------------------------
   // Review
   var MS_TYPES = ['conception_candidate', 'decision_with_reason', 'claim_candidate', 'problem_fixed', 'discard_with_reason',
     'maturity_jump', 'ai_origin_element'];
@@ -831,7 +567,6 @@
   }
 
   function renderReview() {
-    renderClassifier('cls-review');
     var can = !!getSecret();
     $('review-locked').hidden = can;
     var pend = clear($('review-pending'));
@@ -914,7 +649,6 @@
     perf.view = S.view;
     if (S.view === 'overview') renderOverview();
     else if (S.view === 'timeline') renderTimeline();
-    else if (S.view === 'map') { if (G.nodes.length > G.limits.stages_only_above) { S.view = 'overview'; return show(); } renderMap(); }
     else if (S.view === 'review') renderReview();
   }
   function syncControls() {
@@ -934,23 +668,23 @@
       G = g;
       M = buildModel(g);
       renderHeader();
-      renderLegend();
-      if (cy) cyKey = null;
+      renderClassifier();
       show();
-    }).catch(function (err) { $('sync').textContent = 'cannot reach the viewer (' + err.message + ')'; });
+      perf.ready = true;
+      perf.renders++;
+    }).catch(function (err) { $('chain-badge').title = 'cannot reach the viewer (' + err.message + ')'; });
   }
 
   function start() {
     readHash();
     syncControls();
     document.querySelectorAll('#tabs [role=tab]').forEach(function (t) {
-      t.addEventListener('click', function () { if (!t.disabled) go(t.getAttribute('data-view')); });
+      t.addEventListener('click', function () { go(t.getAttribute('data-view')); });
       t.addEventListener('keydown', function (ev) {
         var i = VIEWS.indexOf(t.getAttribute('data-view'));
         if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
           ev.preventDefault();
           var j = (i + (ev.key === 'ArrowRight' ? 1 : VIEWS.length - 1)) % VIEWS.length;
-          if ($('tab-' + VIEWS[j]).disabled) j = (j + (ev.key === 'ArrowRight' ? 1 : VIEWS.length - 1)) % VIEWS.length;
           go(VIEWS[j]);
           $('tab-' + VIEWS[j]).focus();
         }
@@ -964,11 +698,8 @@
       clearTimeout(qt);
       qt = setTimeout(function () { S.q = $('tl-search').value.trim(); tlShown = TL_PAGE; writeHash(); renderTimeline(); }, 200);
     });
-    $('map-focus').addEventListener('change', function () { S.focus = $('map-focus').value; S.sel = null; writeHash(); renderMap(); });
-    $('map-slider').addEventListener('input', function () { S.upto = parseInt($('map-slider').value, 10); writeHash(); renderMap(); });
-    $('map-play').addEventListener('click', togglePlay);
-    $('map-fit').addEventListener('click', function () { if (cy) cy.fit(undefined, 30); });
-    $('help-btn').addEventListener('click', function () { var d = $('help'); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); });
+    $('help-btn').addEventListener('click', function () { openDialog('help'); });
+    $('setup-btn').addEventListener('click', function () { $('help').close(); openDialog('setup'); });
     window.addEventListener('hashchange', function () { readHash(); syncControls(); show(); });
     refresh();
     setInterval(refresh, POLL_MS);
