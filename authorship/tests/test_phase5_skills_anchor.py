@@ -232,9 +232,10 @@ def test_seal_runs_detached_and_reports(qr, tsa_env):
     assert [a["status"] for a in anchors_of(qr)] == ["pending", "complete"]
 
 
-def test_session_end_anchors_when_enabled(project, tsa_env):
+def test_session_end_anchors_by_default(project, tsa_env):
     harness.init_store(project)
-    env = harness.hook_env(project, AUTHORSHIP_ANCHOR="1", **tsa_env["env"])
+    env = harness.hook_env(project, **tsa_env["env"])
+    env.pop("AUTHORSHIP_ANCHOR")  # the default
     harness.run_hook(project, {"hook_event_name": "UserPromptSubmit", "prompt": "#idea x", "cwd": project}, env=env)
     t = time.perf_counter()
     harness.run_hook(project, {"hook_event_name": "SessionEnd", "reason": "other", "cwd": project}, env=env)
@@ -303,3 +304,26 @@ def test_imprint_check_reads_bytes_not_openssl_text(fake_tsa, tmp_path):
         misses += not anchor.covers(open(r, "rb").read(), want)
         assert not anchor.covers(open(r, "rb").read(), hashlib.sha256(b"other").hexdigest())
     assert misses == 0
+
+
+def test_session_end_seals_only_new_work(project, tsa_env, monkeypatch):
+    """Nothing new since the last seal, or no way to timestamp: no Anchor entry."""
+    harness.init_store(project)
+    store = ledger.Store(project)
+    assert not ledger.unsealed_work(store)  # empty
+    ledger.write_note(store, "#idea x")
+    assert ledger.unsealed_work(store)
+    for k, v in tsa_env["env"].items():
+        monkeypatch.setenv(k, v)
+    anchor.run(store)
+    assert not ledger.unsealed_work(store)  # only the seal's own entries since
+    monkeypatch.setenv("AUTHORSHIP_TSA", "off")
+    monkeypatch.setenv("AUTHORSHIP_OTS", "0")
+    ledger.write_note(store, "#idea y")
+    n = len(anchors_of(store))
+    assert anchor.main(["auto", "--project", project]) == 0
+    assert len(anchors_of(store)) == n  # nothing could timestamp it: no pending entry left behind
+    env = harness.hook_env(project, AUTHORSHIP_ANCHOR="0")
+    harness.run_hook(project, {"hook_event_name": "SessionEnd", "reason": "other", "cwd": project}, env=env)
+    time.sleep(1)
+    assert len(anchors_of(store)) == n  # AUTHORSHIP_ANCHOR=0 turns it off

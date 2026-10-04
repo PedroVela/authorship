@@ -684,8 +684,22 @@ def h_session_end(store, p):
         s = load_state(store)
         s["sessions"].setdefault(sid or "?", {})["ended"] = True
         save_state(store, s)
-    if os.environ.get("AUTHORSHIP_ANCHOR") == "1":
-        spawn_detached([sys.executable, os.path.join(SCRIPTS_DIR, "anchor.py"), "--project", store.project])
+    if os.environ.get("AUTHORSHIP_ANCHOR", "1") != "0" and unsealed_work(store):
+        spawn_detached([sys.executable, os.path.join(SCRIPTS_DIR, "anchor.py"), "auto", "--project", store.project])
+
+
+def unsealed_work(store):
+    """True when a human or AI entry was written after the last anchored head (system entries alone do not count:
+    sealing them would only seal the previous seal)."""
+    last, work = 0, []
+    for _, _, e in read_entries(store):
+        if not e:
+            continue
+        if e.get("event") == "Anchor":
+            last = max(last, e.get("anchored_seq") or 0)
+        elif e.get("actor") in ("human", "ai"):
+            work.append(e["seq"])
+    return any(s > last for s in work)
 
 
 HANDLERS = {

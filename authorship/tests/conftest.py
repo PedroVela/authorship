@@ -13,6 +13,7 @@ def _no_live_classifier(monkeypatch, tmp_path):
     """Tests that want the classifier pass a FakeClassifier explicitly."""
     monkeypatch.setenv("AUTHORSHIP_AUTO", "0")
     monkeypatch.setenv("AUTHORSHIP_HINT", "0")
+    monkeypatch.setenv("AUTHORSHIP_ANCHOR", "0")  # sealing at session end is on by default; tests opt in
     monkeypatch.setenv("AUTHORSHIP_BIN_DIR", str(tmp_path / "bin"))  # never write to the real ~/.local/bin
     monkeypatch.setenv("AUTHORSHIP_CONFIG", str(tmp_path / "classifier.json"))  # never read the real saved choice
     monkeypatch.setenv("AUTHORSHIP_PYTHON", sys.executable)  # init never runs setx on the real machine

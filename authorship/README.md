@@ -154,7 +154,7 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 |---|---|---|
 | `AUTHORSHIP_SKIP_TOOLS` | `Read,Glob,Grep,LS,TodoWrite` | Tools not recorded |
 | `AUTHORSHIP_KEEP_TOOL_RESULTS` | unset | `1`: stored transcripts keep what tools returned (see [What is stored](#what-is-stored)) |
-| `AUTHORSHIP_ANCHOR` | unset | `1`: anchor at every session end |
+| `AUTHORSHIP_ANCHOR` | `1` | Seal at the end of every session that added work; `0` to turn it off |
 | `AUTHORSHIP_TSA` | `https://freetsa.org/tsr` | RFC 3161 authority; `off` to disable |
 | `AUTHORSHIP_OTS` | `1` | `0`: skip OpenTimestamps |
 | `AUTHORSHIP_AUTO` | `1` | `0`: no automatic classification (tags and rules still work) |
