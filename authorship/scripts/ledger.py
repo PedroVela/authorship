@@ -620,11 +620,56 @@ def h_precompact(store, p):
     append(store, "PreCompact", "system", _session(p), {"trigger": p.get("trigger")})
 
 
+TRANSCRIPT_OMIT_KEYS = ("toolUseResult", "attachment", "rendered")
+
+
+def _omitted(value, what):
+    data = canonical_json(redact_obj(value)).encode("utf-8")
+    out = {"omitted": what, "sha256": sha256_bytes(data), "bytes": len(data)}
+    if isinstance(value, dict) and isinstance(value.get("type"), str):
+        out["type"] = value["type"]
+    return out
+
+
+def _strip_tool_results(obj):
+    """The conversation without what tools returned: every tool_result's content, toolUseResult, attachments and
+    rendered copies become {omitted, sha256, bytes}. Files read and command output are in the project and in the
+    tool entries; copying them into the record would also copy any secret they hold."""
+    if isinstance(obj, list):
+        return [_strip_tool_results(x) for x in obj]
+    if not isinstance(obj, dict):
+        return obj
+    out = {}
+    for k, v in obj.items():
+        if k in TRANSCRIPT_OMIT_KEYS and v is not None:
+            out[k] = _omitted(v, k)
+        elif k == "content" and obj.get("type") == "tool_result":
+            out[k] = _omitted(v, "tool_result")
+        else:
+            out[k] = _strip_tool_results(v)
+    return out
+
+
+def transcript_text(raw):
+    """The transcript as stored: redacted, and without tool results unless AUTHORSHIP_KEEP_TOOL_RESULTS=1."""
+    if os.environ.get("AUTHORSHIP_KEEP_TOOL_RESULTS") == "1":
+        return redact(raw)
+    lines = []
+    for line in raw.splitlines():
+        try:
+            d = json.loads(line)
+        except ValueError:
+            lines.append(redact(line))
+            continue
+        lines.append(json.dumps(redact_obj(_strip_tool_results(d)), ensure_ascii=False, separators=(",", ":")))
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def _transcript_blob(store, path):
     if not path or not os.path.isfile(path):
         return None
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        data = redact(f.read()).encode("utf-8")
+        data = transcript_text(f.read()).encode("utf-8")
     return {"blob": put_blob(store, data), "bytes": len(data)}
 
 
