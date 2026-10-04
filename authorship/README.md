@@ -105,7 +105,7 @@ authorship restart          # restart the annotator and viewer, to pick up chang
 authorship doctor           # check every piece of the setup; --fix installs or starts what is missing
 ```
 
-`note`, `review`, `seal`, `open`, `restart`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
+`note`, `review`, `seal`, `open`, `restart`, `sign`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status` and `verify` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 
@@ -127,6 +127,22 @@ The viewer starts in the background at session start, on `127.0.0.1` only, and o
 - **Review**: labels to check.
 
 You are a blue circle and Claude an orange square. Review answers are the only writes, and only with the session secret. Full guide with screenshots: [docs/VIEWER.md](docs/VIEWER.md).
+
+## Signatures
+
+The chain and the timestamps prove what was written and when, not who wrote it. To add that, sign your entries with an SSH key, once, in your own terminal:
+
+```bash
+authorship sign setup              # git's SSH signing key, else ~/.ssh/id_ed25519; or --key PATH
+authorship verify                  # ... signatures: 14 of 14 human entries signed by SHA256:... (you@example.com); all valid
+```
+
+From then on every prompt, note and confirmation carries an `ssh-keygen -Y sign` signature (namespace `authorship`) over the entry's canonical JSON. The signature is inside the entry, so the entry hash covers it: removing or changing it breaks the chain. The public key goes to `.authorship/allowed_signers`; commit it with the ledger.
+
+- **Publish the fingerprint.** `allowed_signers` sits next to the ledger, so a verifier must also recognize the key from outside: the SSH keys on your GitHub profile (`https://github.com/<user>.keys`), or a note to your attorney.
+- **The key must sign without a prompt.** A key without a passphrase, or one loaded in `ssh-agent`. If signing fails, the entry is still recorded, unsigned, and the reason goes to `errors.log`.
+- **What it proves.** That the entry was made where your private key was. Anyone who controls your account and key could sign too; keep the key yours.
+- `authorship sign status` shows the key; `authorship sign off` stops signing (existing signatures stay valid).
 
 ## Automatic classification
 
@@ -161,6 +177,8 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_AUTO_BACKEND` | saved choice | `claude`, `openrouter` or `jev`; with no choice, Jev when a Jev key is set, else Claude |
 | `AUTHORSHIP_AUTO_MODEL` | `claude-sonnet-5` / `anthropic/claude-sonnet-5` | Model for the Claude or OpenRouter backend |
 | `AUTHORSHIP_JEV_MODEL` | `jev-1.13.0` | Jev version |
+| `AUTHORSHIP_SIGNING_CONFIG` | `~/.config/authorship/signing.json` | Where `authorship sign setup` saves the key to use |
+| `AUTHORSHIP_SSH_KEYGEN` | `ssh-keygen` on the PATH | The `ssh-keygen` used to sign and verify |
 | `AUTHORSHIP_CONFIG` | `~/.config/authorship/classifier.json` | Where `authorship classifier use` saves the choice; these variables win over it |
 | `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Jev key (TypeSafe, OpenRouter, Vercel); setting one switches the classifier to Jev |
 | `AUTHORSHIP_JEV_PROVIDER` | by key | `typesafe`, `openrouter` or `vercel_gateway` (by default the first key found, in that order) |
@@ -199,6 +217,7 @@ Commit `ledger.jsonl`, `blobs/` and `anchors/`: the chain needs the blobs it cit
 ├── state.json          transcript offsets per session
 ├── blobs/ab/<sha256>   content-addressed payloads
 ├── anchors/            <seq>-<hash16>.txt/.tsq/.tsr/.ots
+├── allowed_signers     public keys that signed human entries (ssh-keygen format)
 ├── annotations.jsonl   machine opinions (derived)
 ├── index.sqlite        query index (derived, gitignored)
 ├── run/                pids, viewer port and secret (gitignored)

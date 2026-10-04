@@ -20,6 +20,9 @@
                                     environment variables still win). `auto` forgets the choice.
     authorship classifier models [claude|openrouter|jev] [FILTER]
                                     models to choose from (openrouter: those with structured output)
+    authorship sign setup [--key PATH] [--principal EMAIL]
+                                    sign your entries with an SSH key (default: git's signing key,
+                                    else ~/.ssh/id_ed25519); `sign off` stops, `sign status` shows it
     authorship restart              restart the annotator and viewer with this terminal's settings
     authorship install [--bin-dir DIR]   put `authorship` on your PATH (~/.local/bin)
     authorship doctor [--fix]       check every piece; --fix installs what is missing
@@ -472,6 +475,41 @@ def cmd_classifier(store, args, stdout=None):
     return 0
 
 
+def cmd_sign(args, stdout=None):
+    import signing
+
+    stdout = stdout or sys.stdout
+    args = list(args)
+    sub = args[0] if args else "status"
+    if sub == "status":
+        c = signing.config()
+        stdout.write("Signing: %s\n" % ("on, key %s (%s), %s" % (c["fingerprint"], c["principal"], c["key"]) if c
+                                          else "off (`authorship sign setup` turns it on)"))
+        project = find_project()
+        if project:
+            stdout.write(signing.describe(signing.verify(ledger.Store(project))) + "\n")
+        return 0
+    if sub not in ("setup", "off"):
+        stdout.write("Usage: authorship sign setup [--key PATH] [--principal EMAIL] | off | status\n")
+        return 2
+    ledger.require_human("authorship sign %s" % sub)
+    if sub == "off":
+        signing.save_config(None)
+        stdout.write("Signing is off. New entries are not signed; existing signatures stay valid.\n")
+        return 0
+    key, principal = _pop_flag(args, "--key"), _pop_flag(args, "--principal")
+    try:
+        c = signing.setup(key, principal)
+    except Exception as exc:
+        stdout.write("Not set up: %s\n" % exc)
+        return 1
+    stdout.write("Signing your entries with %s\n  key %s\n  as  %s\n" % (c["key"], c["fingerprint"], c["principal"]))
+    stdout.write("Prompts, notes and confirmations are signed from now on, in every project.\n")
+    stdout.write("Keep this fingerprint where others can check it (for example the SSH keys on your GitHub profile,\n"
+                 "or a note to your attorney): a verifier compares it with the one in the record.\n")
+    return 0
+
+
 def cmd_restart(store, args):
     import signal
     import time
@@ -723,6 +761,8 @@ def main(argv):
         return cmd_doctor(rest)
     if cmd == "init":
         return cmd_init(rest)
+    if cmd == "sign":  # no project needed
+        return cmd_sign(rest)
     if cmd == "classifier" and rest[:1] == ["use"]:  # no project needed
         return cmd_classifier_use(rest[1:])
     if cmd == "classifier" and rest[:1] == ["models"]:

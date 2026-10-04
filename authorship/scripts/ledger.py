@@ -232,8 +232,12 @@ def append(store, event, actor, session=None, fields=None):
             "prev": prev,
         }
         for k, v in (fields or {}).items():
-            if k not in entry and k != "hash":
+            if k not in entry and k not in ("hash", "sig"):
                 entry[k] = v
+        if actor == "human":
+            import signing
+
+            signing.sign_entry(store, entry)  # inside the hashed entry: removing it breaks the chain
         entry["hash"] = entry_hash(entry)
         with open(store.ledger, "a", encoding="utf-8") as f:
             f.write(canonical_json(entry) + "\n")
@@ -1073,12 +1077,20 @@ def main(argv):
             res["anchors"] = anchor.verify_anchors(store)
             if not res["anchors"]["ok"]:
                 res["ok"] = False
+        import signing
+
+        res["signatures"] = signing.verify(store)
+        if not res["signatures"]["ok"]:
+            res["ok"] = False
         if as_json:
             print(canonical_json(res))
         elif res["ok"]:
             print("ok: %d entries, head %s" % (res["entries"], (res["head"] or "-")[:16]))
         else:
-            print("BROKEN at #%s: %s" % (res["broken_at"], res["reason"] or (res.get("anchors") or {}).get("reason")))
+            print("BROKEN at #%s: %s" % (res["broken_at"], res["reason"] or (res.get("anchors") or {}).get("reason")
+                                         or "signature invalid"))
+        if not as_json:
+            print(signing.describe(res["signatures"]))
         return 0 if res["ok"] else 1
 
     if cmd == "status":

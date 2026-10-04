@@ -21,6 +21,7 @@ def hook_env(project, **extra):
     env["AUTHORSHIP_NO_DAEMONS"] = "1"
     env["AUTHORSHIP_AUTO"] = "0"  # never call the real classifier from tests
     env["AUTHORSHIP_ANCHOR"] = "0"  # never contact a real timestamp authority at session end
+    env.setdefault("AUTHORSHIP_SIGNING_CONFIG", os.path.join(project if os.path.isdir(project) else "/tmp", ".test-signing.json"))
     env["AUTHORSHIP_HINT"] = "0"
     env["AUTHORSHIP_BIN_DIR"] = os.path.join(project if os.path.isdir(project) else "/tmp", ".test-bin")  # never ~/.local/bin
     env["CLAUDE_PLUGIN_ROOT"] = PLUGIN
