@@ -5,9 +5,9 @@
 When you design something with Claude, the moment you have the idea happens in a chat that nobody keeps. If you later file a patent, you may have to show that a person conceived the invention, not the AI. This Claude Code plugin keeps that record for you. You turn it on once; after that there is nothing to remember:
 
 - **Everything is recorded.** Your prompts, Claude's replies, every file it edits and every test it runs go into a ledger inside your project.
-- **Nobody can quietly change it.** Each entry is chained to the previous one by a hash, so editing any entry breaks the chain. Claude is blocked from touching the ledger or writing in your name. External timestamps can prove when the record existed.
+- **Nobody can quietly change it.** Each entry is chained to the previous one by a hash, so editing any entry breaks the chain. Claude is blocked from touching the ledger or writing in your name. At the end of every session an external timestamp proves when the record existed, and your entries can carry your SSH signature, proving who wrote them.
 - **Your ideas and Claude's ideas stay apart, on their own.** A classifier reads each entry in the background and works out what it is. That covers your problems, ideas, decisions and claims, the options Claude offered, and where you changed or rejected them. It also tracks when the work moved to a new stage. You never have to tag anything.
-- **It ends in a draft for your attorney.** An invention disclosure where every element is quoted and cited to the exact ledger entry, AI-originated parts stated plainly.
+- **It ends in something your attorney can use.** An invention disclosure where every element is quoted and cited to the exact ledger entry, AI-originated parts stated plainly; and an export that anyone can verify without this plugin.
 
 To see what this looks like in practice, jump to [How a conversation becomes evidence](#how-a-conversation-becomes-evidence): diagrams and a worked example, message by message.
 
@@ -86,13 +86,16 @@ Add a note in your own name when something happened off the chat, for example an
 
 **If you want to steer it**, type a tag: `#idea`, `#claim`, `#decision`, `#problem`, `#hypothesis`, `#discard`, `#stage <name>`. Spanish works too: `#problema`, `#hipotesis`, `#descarte`, `#etapa`. Your tag always wins over the classifier. Tags are optional.
 
+**Once**, in your own terminal: `authorship sign setup`, so your entries carry your SSH signature (see [Signatures](authorship/README.md#signatures)).
+
 **Every so often**, close the loop:
 
 | Step | Command | What it does |
 |---|---|---|
 | Review | `authorship review` | Labels in your favor that the classifier was unsure of (0.50 to 0.80) wait here; accept, reject or edit each one. `--all` also lets you correct the ones already counted. |
-| Seal | `authorship seal` | Gets an external timestamp for the current state of the ledger, so any later rewrite is detectable. |
+| Seal | automatic | Every session that added work is sealed when it ends: an external timestamp, so any later rewrite is detectable. `authorship seal` seals right now. |
 | Draft | `/authorship:disclosure` (in Claude Code) | Writes `authorship-exports/<date>-disclosure.md` for your attorney, with every element cited to the ledger. |
+| Hand over | `authorship export` | A folder and a zip with the record, the proofs and a short verifier: your attorney or an expert checks it with `python3 verify.py`, without the plugin. |
 
 ### The viewer
 
@@ -101,7 +104,7 @@ Add a note in your own name when something happened off the chat, for example an
 - **Timeline**: what happened, in order; open any entry for its text and code change.
 - **Review**: labels to check.
 
-![Overview: a claim, the elements it rests on, and who contributed each](authorship/docs/images/viewer-overview.png)
+![What you invented: a claim, the elements it rests on, and who contributed each](authorship/docs/images/viewer-overview.png)
 
 Guide: [docs/VIEWER.md](authorship/docs/VIEWER.md).
 
@@ -124,7 +127,7 @@ authorship restart                                              # the annotator 
 authorship classifier --test                                    # confirms which backend answers
 ```
 
-`authorship classifier` shows what is in use at any time, and so does the viewer, in a strip on Overview and Review with a **How to change it** link.
+`authorship classifier` shows what is in use at any time, and so does the viewer's **Help**. When the text goes to another provider, a strip under the viewer's tabs says so, with a **How to change it** link.
 
 The record leans against you, never for you:
 - A label in your favor counts only from 0.80 confidence.
@@ -143,16 +146,16 @@ Every message, edit and test run passes through the same path. You do nothing: t
 flowchart TD
   you(["You type a prompt"]) --> hooks
   claude(["Claude replies, edits, runs tests"]) --> hooks
-  hooks["Hooks record every event, secrets redacted"] --> ledger
+  hooks["Hooks record every event, secrets redacted<br/>your entries signed, if set up"] --> ledger
   guard{{"Guard: Claude cannot edit the ledger or write as you"}} -.-> ledger
   ledger[("LEDGER: evidence<br/>append-only, hash-chained")] -- "seconds later, in the background" --> annot
-  annot["Annotator: classifier (Claude or Jev) + rules"] --> ann[("ANNOTATIONS: opinions<br/>tags, stages, milestones, links")]
+  annot["Annotator: classifier (Claude, OpenRouter or Jev) + rules"] --> ann[("ANNOTATIONS: opinions<br/>tags, stages, milestones, links")]
   ann --> views["What you see<br/>viewer · authorship log · disclosure draft · MCP tools"]
   ledger --> views
   views --> review(["You answer what the classifier was unsure of"])
   review -- "a Confirm entry, in your name" --> ledger
-  ledger -. "authorship seal: only a hash leaves" .-> tsa["Timestamp authority (RFC 3161)<br/>signed time, in seconds"]
-  ledger -. "authorship seal: only a hash leaves" .-> btc[("Bitcoin blockchain<br/>via OpenTimestamps, within hours")]
+  ledger -. "seal at session end: only a hash leaves" .-> tsa["Timestamp authority (RFC 3161)<br/>signed time, in seconds"]
+  ledger -. "seal at session end: only a hash leaves" .-> btc[("Bitcoin blockchain<br/>via OpenTimestamps, within hours")]
   classDef store fill:#f3f2ee,stroke:#52514e,color:#0b0b0b
   classDef person fill:#2a78d6,stroke:#2a78d6,color:#fff
   classDef ai fill:#eb6834,stroke:#eb6834,color:#fff
@@ -270,7 +273,7 @@ Blue rounded shapes are your entries; orange squares are Claude's; dashed shapes
 
 ### Where the blockchain comes in
 
-The hash chain makes any edit to an entry visible. It cannot, on its own, stop someone who controls the files from rewriting the whole chain with fresh, consistent hashes. External timestamps close that gap. `authorship seal` sends only the **hash of the latest entry** out of your machine, never your text, to two independent places:
+The hash chain makes any edit to an entry visible. It cannot, on its own, stop someone who controls the files from rewriting the whole chain with fresh, consistent hashes. External timestamps close that gap. Sealing, at the end of every session or with `authorship seal`, sends only the **hash of the latest entry** out of your machine, never your text, to two independent places:
 
 1. **A timestamp authority (RFC 3161,** freetsa.org by default**).** It signs "this hash existed at this time" and answers in seconds.
 2. **OpenTimestamps, which writes it into the Bitcoin blockchain.** Calendars aggregate many hashes into one Bitcoin transaction. Once that transaction is in a block, usually within a few hours, the proof points to that block. Nobody can backdate it, and anyone can check it with the free `ots` tool, without trusting this plugin.
@@ -306,7 +309,7 @@ authorship seal                     # seal now, without waiting for the session 
 export AUTHORSHIP_ANCHOR=0          # turn off sealing at session end
 ```
 
-The status line and the Overview show how far the record is sealed (`sealed to #N`). Entries after that are protected by the hash chain, but not yet by an external timestamp.
+The status line and the viewer's header show how far the record is sealed (`sealed to #N`). Entries after that are protected by the hash chain, but not yet by an external timestamp.
 
 ### What you see at the end
 
@@ -319,7 +322,7 @@ authorship ✓ 14 | 14 unsealed | 0 to review
 classifier: on (claude-cli)
 ```
 
-**The viewer's Overview** shows claim #13 with its four elements:
+**The viewer's "What you invented" tab** shows claim #13 with its four elements:
 
 | Element | Origin | Evidence |
 |---|---|---|
@@ -351,10 +354,12 @@ Hashes differ in each run; `tests/validate_citations.py` checks that every one r
 
 | What you see | What to do |
 |---|---|
-| `refuses to run from Claude Code` | `note`, `review`, `seal` and `open` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
+| `refuses to run from Claude Code` | `note`, `review`, `seal`, `open`, `sign`, `restart` and `classifier use` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
 | The viewer did not open | `authorship open`. The page explains itself under "Help"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
 | Something does not work | `authorship doctor` checks every piece and prints the fix; `authorship doctor --fix` applies the ones it can. |
-| Claude cannot look things up in the ledger | Restart Claude Code; the lookup server runs on the same `python3` as the hooks. `/mcp` inside Claude Code shows its state. |
+| Claude cannot look things up in the ledger | Restart Claude Code; `/mcp` inside Claude Code shows the lookup server's state. It starts with `python3`, or on Windows with the Python saved in `AUTHORSHIP_PYTHON` by `/authorship:init`. |
+| `verify` says `signatures: ... INVALID at #N` | Entry N carries a signature that does not match the keys in `allowed_signers`. Do not edit anything; tell your attorney. |
+| The viewer stays on "Loading…" for a large record | Antivirus that inspects local web traffic can stall it. The viewer compresses large responses; if it still stalls, allow `127.0.0.1` in the antivirus' web shield. |
 | `authorship: no .authorship/ here` | You are outside a recorded project; `cd` into it, or run `/authorship:init`. |
 | `authorship verify` says `BROKEN at #N` | Entry N was changed after it was written. Do not "fix" the ledger; tell your attorney. Git history shows when it changed. |
 | Claude says `authorship guard: blocked` on normal work | The guard is too strict for that command: run it yourself, and report it as a bug. |
@@ -364,13 +369,19 @@ Hashes differ in each run; `tests/validate_citations.py` checks that every one r
 
 To pause recording: `claude plugin disable authorship@authorship-dev` (the ledger stays; the pause shows up as a gap). To keep recording but stop the classifier: `authorship classifier use off`. To stop suggesting `/authorship:init` in other repositories: `export AUTHORSHIP_HINT=0`.
 
-## More
+## Documentation
 
-- [Plugin reference](authorship/README.md): all commands, skills, settings and files
-- [Export](authorship/README.md#export): `authorship export` gives your attorney a bundle that verifies without the plugin
-- [Automatic classification](authorship/docs/CLASSIFICATION.md): what is asked, which backend answers, thresholds, how to correct it
-- [The viewer](authorship/docs/VIEWER.md): the four tabs, the symbols, and how answers are recorded
-- [Threat model](authorship/docs/THREATS.md): what the plugin protects against, and what it does not
-- [Build spec](AUTHORSHIP_PLUGIN_SPEC.md) and [deviations from it](authorship/docs/DEVIATIONS.md)
+| If you want to | Read | Kind |
+|---|---|---|
+| Start, and see how a session becomes evidence | this page | tutorial and explanation |
+| Try it on a throwaway project in five minutes | [Try it in five minutes](authorship/README.md#try-it-in-five-minutes) | tutorial |
+| Change the classifier or its model | [Setting it up](authorship/docs/CLASSIFICATION.md#setting-it-up) | how-to |
+| Sign your entries, or hand the record to your attorney | [Signatures](authorship/README.md#signatures), [Export](authorship/README.md#export) | how-to |
+| Look up a command, setting or file | [Plugin reference](authorship/README.md) | reference |
+| Read the viewer | [The viewer](authorship/docs/VIEWER.md) | reference |
+| Know what is stored, and what is not | [What is stored](authorship/README.md#what-is-stored) | reference |
+| Understand how entries are classified, and the thresholds | [Automatic classification](authorship/docs/CLASSIFICATION.md) | explanation |
+| Know what the record proves, legally and technically | [Legal notes](authorship/docs/LEGAL-NOTES.md), [Threat model](authorship/docs/THREATS.md) | explanation |
+| See why the build differs from its spec | [Build spec](AUTHORSHIP_PLUGIN_SPEC.md), [Deviations](authorship/docs/DEVIATIONS.md) | explanation |
 
-Development: `python3 -m venv .venv && .venv/bin/pip install pytest playwright`, then `.venv/bin/python -m pytest -q authorship/tests` and `claude plugin validate ./authorship`.
+Development: `python3 -m venv .venv`, then `.venv/bin/pip install pytest playwright` (on Windows, `.venv\Scripts\pip`), `python -m playwright install chromium`, `python -m pytest -q authorship/tests` and `claude plugin validate ./authorship`. CI runs the suite on Ubuntu, macOS and Windows, and the browser tests on Ubuntu.
