@@ -1,10 +1,10 @@
 # Authorship Ledger
 
-A Claude Code plugin that records how you and Claude co-develop an invention, as tamper-evident, timestamped evidence of what you conceived and what Claude proposed.
+A Claude Code plugin that records how you and Claude co-develop an invention, as tamper-evident, timestamped and signed evidence of what you conceived and what Claude proposed.
 
-Every prompt, tool call and response goes into a hash-chained ledger in your project. A background classifier labels each entry (problem, idea, decision, claim, discard; what it builds on; the stage of the work), so nothing has to be tagged. A guard keeps Claude from editing that ledger or writing entries in your name. A local viewer shows the reasoning as stages, IBIS swimlanes, claim genealogy and branches. Drafts for your attorney cite every element to a ledger entry.
+Every prompt, tool call and response goes into a hash-chained ledger in your project. A background classifier labels each entry (problem, idea, decision, claim, discard; what it builds on; the stage of the work), so nothing has to be tagged. A guard keeps Claude from editing that ledger or writing entries in your name. Each session is sealed with an external timestamp when it ends, and your entries can carry your SSH signature. A local viewer shows each claim and who contributed each part, the timeline, and the labels to check. Drafts for your attorney cite every element to a ledger entry, and an export verifies without the plugin.
 
-This is the reference. New here? Start with the [project README](../README.md): what it is for, three steps to start, and fixes for common problems.
+This is the reference. New here? Start with the [project README](../README.md): what it is for, two steps to start, and fixes for common problems.
 
 > Drafts are for attorney review. This plugin does not give legal advice and does not replace filing. See [docs/LEGAL-NOTES.md](docs/LEGAL-NOTES.md).
 
@@ -15,7 +15,8 @@ This is the reference. New here? Start with the [project README](../README.md): 
 - macOS, Linux or Windows. On Windows, hooks, skills and the `authorship` command find Python as `python3`, `python` or `py -3`. The lookup (MCP) server starts with `AUTHORSHIP_PYTHON`, which `/authorship:init` saves when there is no `python3`; restart Claude Code once after it. `openssl` comes with Git for Windows.
 - Optional, set up by `authorship doctor --fix`:
   - `openssl` for RFC 3161 timestamps (it comes with macOS and most Linux systems);
-  - [`ots`](https://github.com/opentimestamps/opentimestamps-client) for Bitcoin timestamps, installed in a private environment under `~/.local/share/authorship/ots` and linked as `~/.local/bin/ots`.
+  - [`ots`](https://github.com/opentimestamps/opentimestamps-client) for Bitcoin timestamps, installed in a private environment under `~/.local/share/authorship/ots` and linked as `~/.local/bin/ots` (on Windows it stays in that environment's `Scripts` folder, where anchoring finds it).
+- Optional, for signatures: `ssh-keygen` (OpenSSH 8.2 or later; it comes with macOS, Linux, Windows 10+ and Git for Windows).
 
 ## Install
 
@@ -49,7 +50,7 @@ Then:
 
 1. Enable the sandbox (`/sandbox`), so the `Edit` deny rule also becomes an OS-level write denial for Bash.
 2. Optionally add the status line snippet `init` prints, for `authorship ✓ 214 | 12 unsealed | 3 to review`.
-3. Keep the repository private. Commit `.authorship/ledger.jsonl`, `blobs/`, `anchors/` and `annotations.jsonl`.
+3. Keep the repository private. Commit `.authorship/ledger.jsonl`, `blobs/`, `anchors/`, `allowed_signers` and `annotations.jsonl`.
 
 No restart is needed. `init` also starts the viewer (it opens in your browser) and the annotator, and hands Claude the authorship protocol in the same session, so everything from the next prompt on is recorded and Claude follows the rules. Later sessions get the same through the SessionStart hook.
 
@@ -116,7 +117,7 @@ authorship doctor           # check every piece of the setup; --fix installs or 
 | `/authorship:init` | Set up the project (above) |
 | `/authorship:review` | List machine suggestions waiting for your confirmation; you decide them with `authorship review` (or the viewer's Review tab) |
 | `/authorship:disclosure [--claim N]` | Draft `authorship-exports/<date>-disclosure.md` with an element table (human / AI / mixed) and validated citations |
-| `/authorship:seal` | Anchor the current head to an RFC 3161 timestamp authority (and OpenTimestamps when installed) |
+| `/authorship:seal` | Anchor the current head now to an RFC 3161 timestamp authority (and OpenTimestamps when installed). Every session end does the same on its own. |
 
 The `inventorship-reviewer` subagent writes a contribution analysis for one claim, unfavorable facts first.
 
@@ -166,7 +167,7 @@ It refuses to export a record that does not verify. Seal first (`authorship seal
 On by default, as soon as the project is initialized. Full description: [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md).
 
 - **What it does.** Each new prompt, note and reply is classified in the background by the annotator. It finds the kind (problem, idea, hypothesis, decision, claim, discard, instruction), a new technical element, the stance toward an earlier element, its parents, maturity, and a change of stage. The answers become tags, stages, milestones and lineage edges.
-- **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. Jev takes over when `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set: faster, with measured probabilities, but a new party receives the text.
+- **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. You can choose any OpenRouter model with structured output instead, or Jev (TypeSafe's evaluator: faster, with measured probabilities). Both send the text to a new party. With no choice saved, a Jev key in the environment selects Jev.
 - **Thresholds.** A label in your favor counts automatically from 0.80 and waits in `authorship review` between 0.50 and 0.80. A label against you (an AI-origin element) counts from 0.50.
 - **Where it goes.** Answers go to `annotations.jsonl`, with the backend, the model id, a prompt hash and every confidence. They never go to the ledger.
 - **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: `authorship classifier use claude|openrouter|jev [MODEL]`, then `authorship restart`. OpenRouter and Jev need their key in your shell profile. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
@@ -197,7 +198,8 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_SIGNING_CONFIG` | `~/.config/authorship/signing.json` | Where `authorship sign setup` saves the key to use |
 | `AUTHORSHIP_SSH_KEYGEN` | `ssh-keygen` on the PATH | The `ssh-keygen` used to sign and verify |
 | `AUTHORSHIP_CONFIG` | `~/.config/authorship/classifier.json` | Where `authorship classifier use` saves the choice; these variables win over it |
-| `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Jev key (TypeSafe, OpenRouter, Vercel); setting one switches the classifier to Jev |
+| `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY` / `AI_GATEWAY_API_KEY` | unset | Provider keys. With no backend chosen, setting one selects Jev; `OPENROUTER_API_KEY` also serves the OpenRouter backend |
+| `AUTHORSHIP_PYTHON` | unset | Python that starts the lookup (MCP) server, and that the hooks prefer; `/authorship:init` sets it on Windows when there is no `python3` |
 | `AUTHORSHIP_JEV_PROVIDER` | by key | `typesafe`, `openrouter` or `vercel_gateway` (by default the first key found, in that order) |
 | `AUTHORSHIP_JEV` | unset | `1`: also run the spec's Tier 1 questions (calibration) |
 | `AUTHORSHIP_VIEWER_PORT` | `47291` | First port tried |
@@ -233,7 +235,7 @@ Commit `ledger.jsonl`, `blobs/` and `anchors/`: the chain needs the blobs it cit
 ├── head.json           {seq, hash} cache
 ├── state.json          transcript offsets per session
 ├── blobs/ab/<sha256>   content-addressed payloads
-├── anchors/            <seq>-<hash16>.txt/.tsq/.tsr/.ots
+├── anchors/            <seq>-<hash16>.txt/.tsq/.tsr/.ots, and tsa/<host>/ with the authority's certificates
 ├── allowed_signers     public keys that signed human entries (ssh-keygen format)
 ├── annotations.jsonl   machine opinions (derived)
 ├── index.sqlite        query index (derived, gitignored)
@@ -246,9 +248,12 @@ Entry hash: `sha256(canonical_json(entry_without_hash))` with sorted keys, `ensu
 ## Development
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install pytest playwright
+python3 -m venv .venv && .venv/bin/pip install pytest playwright   # Windows: .venv\Scripts\pip
+.venv/bin/python -m playwright install chromium                      # for the viewer's browser tests
 .venv/bin/python -m pytest -q authorship/tests
 claude plugin validate ./authorship
 ```
+
+CI (`.github/workflows/tests.yml`) runs the suite on Ubuntu, macOS and Windows, with Python 3.9 and 3.12, and the browser tests on Ubuntu.
 
 More: [docs/VIEWER.md](docs/VIEWER.md), [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md), [docs/THREATS.md](docs/THREATS.md), [docs/DEVIATIONS.md](docs/DEVIATIONS.md), and troubleshooting in the [project README](../README.md#if-something-goes-wrong).
