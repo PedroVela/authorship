@@ -153,6 +153,7 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | Variable | Default | Effect |
 |---|---|---|
 | `AUTHORSHIP_SKIP_TOOLS` | `Read,Glob,Grep,LS,TodoWrite` | Tools not recorded |
+| `AUTHORSHIP_KEEP_TOOL_RESULTS` | unset | `1`: stored transcripts keep what tools returned (see [What is stored](#what-is-stored)) |
 | `AUTHORSHIP_ANCHOR` | unset | `1`: anchor at every session end |
 | `AUTHORSHIP_TSA` | `https://freetsa.org/tsr` | RFC 3161 authority; `off` to disable |
 | `AUTHORSHIP_OTS` | `1` | `0`: skip OpenTimestamps |
@@ -169,6 +170,25 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_NO_DAEMONS` | unset | `1`: do not start the annotator and viewer |
 | `AUTHORSHIP_AUTHOR` | `$USER` | Author name on notes |
 | `AUTHORSHIP_HINT` | `1` | `0`: never suggest `/authorship:init` in uninitialized repositories |
+
+## What is stored
+
+Everything stays on your machine, in `.authorship/` inside the project. Nothing is uploaded; the viewer is a local server on `127.0.0.1` that reads that folder.
+
+| What | Where | Why |
+|---|---|---|
+| Your prompts and notes, verbatim (secrets redacted) | `ledger.jsonl`, or a blob when over 8 KB | Your contribution, word for word |
+| Claude's replies | `ledger.jsonl` | Its contribution |
+| Each edit or write Claude made: the code, and the file's hash after it | a blob per tool call, plus `file_sha_after` | What the AI wrote, and when |
+| Each command Claude ran, and its output | a blob per tool call | Tests that pass after failing count as reduction to practice |
+| The session transcript, at session end | a blob | The whole exchange in order, as Claude Code saw it |
+
+Not stored:
+
+- **What tools returned, inside the transcript.** The content of each tool result (a file read, a search, a web page), the structured `toolUseResult`, attachments and rendered copies are replaced by `{"omitted", "sha256", "bytes"}` of their redacted form. What you and Claude said, and which tool Claude called with which arguments, stay verbatim. The files are in your project and in git; copying them again would also copy any secret they hold. `AUTHORSHIP_KEEP_TOOL_RESULTS=1` keeps them.
+- **Reads and searches as entries.** `Read`, `Glob`, `Grep` and `LS` are not recorded (`AUTHORSHIP_SKIP_TOOLS`).
+
+Commit `ledger.jsonl`, `blobs/` and `anchors/`: the chain needs the blobs it cites. That puts Claude's code, command output and the transcripts in the repository's history, so keep it private. Redaction catches known key formats and `password=`-style assignments, not every secret: a value with no recognizable shape can still reach a command's output.
 
 ## Files
 

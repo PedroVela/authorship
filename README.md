@@ -169,6 +169,8 @@ Two stores, kept apart on purpose:
 - **The ledger is evidence.** It holds what was said and done, and your own answers. Each entry carries the hash of the one before, so changing any entry breaks the chain from that point.
 - **Annotations are opinions.** They hold what the classifier and the rules think each entry is. They can be recomputed or rejected; they never touch the ledger.
 
+Both live in `.authorship/` inside your project; nothing is uploaded. The ledger keeps your words verbatim, Claude's replies, the code it wrote and the commands it ran with their output. The session transcript is kept too, but without what tools returned: a file Claude read or a search result is stored as a hash, since the file is already in your project. The full list: [What is stored](authorship/README.md#what-is-stored).
+
 ### A worked example: the ping-pong of ideas
 
 Here is a real session from the test suite, with no tags typed. The goal is to speed up the reconciliation of QR payments.
