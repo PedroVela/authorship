@@ -280,3 +280,42 @@ def test_init_hint_once_per_git_project(project, tmp_path):
     open(os.path.join(other, ".git", "HEAD"), "w").write("ref: refs/heads/main\n")
     off = harness.hook_env(other, CLAUDE_PLUGIN_DATA=str(tmp_path / "data"), AUTHORSHIP_HINT="0")
     assert run_hook(other, dict(start, cwd=other), "session-start", env=off).stdout == ""
+
+
+def test_stored_transcript_keeps_the_conversation_not_tool_results(project):
+    """What tools returned (files read, command output) is hashed, not copied; what was said stays verbatim."""
+    import rules
+    harness.init_store(project)
+    store = ledger.Store(project)
+    tp = os.path.join(project, "t.jsonl")
+    lines = [
+        {"type": "user", "message": {"role": "user", "content": "Idea: ¿marcar el local más cercano?"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "Leo la configuración."},
+            {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": ".env"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "DB_HOST=internal-db-7731"}]},
+         "toolUseResult": {"type": "text", "file": {"content": "DB_HOST=internal-db-7731"}}},
+        {"type": "attachment", "attachment": {"type": "edited_text_file", "snippet": "DB_HOST=internal-db-7731"}},
+    ]
+    with open(tp, "w", encoding="utf-8") as f:
+        f.write("\n".join(json.dumps(l, ensure_ascii=False) for l in lines) + "\nnot json\n")
+    assert run_hook(project, {"hook_event_name": "SessionEnd", "session_id": "s", "cwd": project,
+                              "transcript_path": tp, "reason": "exit"}).returncode == 0
+    e = [x for x in entries(store) if x["event"] == "SessionEnd"][-1]
+    stored = open(store.blob_path(e["transcript"]["blob"]), encoding="utf-8").read()
+    assert "internal-db-7731" not in stored
+    assert "¿marcar el local más cercano?" in stored and "Leo la configuración." in stored
+    assert '"name":"Read"' in stored and '"file_path":".env"' in stored  # what Claude asked for stays
+    rows = [json.loads(l) for l in stored.splitlines() if l.startswith("{")]
+    assert rows[2]["message"]["content"][0]["content"]["omitted"] == "tool_result"
+    assert rows[2]["toolUseResult"]["omitted"] == "toolUseResult" and rows[2]["toolUseResult"]["bytes"] > 0
+    assert rows[3]["attachment"]["type"] == "edited_text_file"
+    assert stored.splitlines()[-1] == "not json"
+    assert ledger.verify(store)["ok"]
+    # opt back in
+    env = harness.hook_env(project, AUTHORSHIP_KEEP_TOOL_RESULTS="1")
+    run_hook(project, {"hook_event_name": "SessionEnd", "session_id": "s2", "cwd": project, "transcript_path": tp},
+             env=env)
+    e = [x for x in entries(store) if x["event"] == "SessionEnd"][-1]
+    assert "internal-db-7731" in open(store.blob_path(e["transcript"]["blob"]), encoding="utf-8").read()
