@@ -35,6 +35,10 @@ An attorney will give more weight to labels you confirmed. Before relying on a d
 
 RFC 3161 responses and OpenTimestamps proofs show that the ledger head existed at a given time. They do not show who wrote an entry or that its content is true. The hash chain, the guard and the human-only commands keep Claude from writing in your name; with `authorship sign setup`, each of your entries also carries your SSH signature, which shows it was made where your private key was. Publish the key's fingerprint somewhere a third party can check (your GitHub SSH keys, or a letter to your attorney), since the list of allowed keys is stored next to the ledger. Keep the anchor files (`.authorship/anchors/`) with the repository.
 
+## Handing it over
+
+`authorship export` writes a bundle your attorney or an expert can check without installing anything but Python: the record, the timestamp proofs, the signatures, a short verifier and the format. Seal right before exporting, and keep the zip with your filing papers.
+
 ## Drafts
 
 `/authorship:disclosure` and the `inventorship-reviewer` subagent write drafts under `authorship-exports/`. They quote your text verbatim and cite every element as `#<seq> (<hash12>)`; `tests/validate_citations.py` checks that each citation resolves. They are starting points for your attorney, not filings.
