@@ -23,6 +23,7 @@
   </div>
 </header>
 <div class="banner danger" id="broken-banner" role="alert" hidden></div>
+<div class="banner notice" id="offline" role="status" hidden></div>
 
 <nav class="tabs" role="tablist" aria-label="Views" id="tabs">
   <button role="tab" id="tab-overview" data-view="overview" aria-controls="panel-overview" aria-selected="true">
@@ -114,7 +115,7 @@ export AI_GATEWAY_API_KEY=your-key   # or Vercel</pre>
     <h2 id="help-title">How to read this</h2>
     <dl class="help-list">
       <dt>What you invented</dt><dd>Your claims and what each rests on. Every element says whether it came from you, from Claude, or from you changing something Claude proposed.</dd>
-      <dt>Timeline</dt><dd>The record in order, grouped by stage of the work. "Key moments" hides Claude's routine work; "Everything" shows every entry. Open a row for its full text and code change.</dd>
+      <dt>Timeline</dt><dd>The record in order, grouped by stage of the work. "Key moments" folds Claude's routine work and your Review answers into one row each; open the row to see every step. "Everything" shows every entry. Search always looks through everything. Open a row for its full text and code change.</dd>
       <dt>Review</dt><dd>Labels the classifier was not sure of, for you to accept, reject or change. Only your answers are evidence; the classifier's labels are opinions.</dd>
     </dl>
     <h3>Who labels the entries</h3>
@@ -127,7 +128,7 @@ export AI_GATEWAY_API_KEY=your-key   # or Vercel</pre>
       <li><i class="sym ai" aria-hidden="true"></i> Square: written by Claude</li>
       <li><i class="sym dead" aria-hidden="true"></i> Dashed outline: discarded or rejected</li>
       <li><span class="lbl auto">idea</span> Dashed label: set by the classifier; solid: typed by you or confirmed</li>
-      <li><code>#4</code>: ledger entry 4; <code>#3.2</code>: option 2 of Claude's reply #3</li>
+      <li><code>#4</code>: ledger entry 4; <code>#3.2</code>: option 2 of Claude's reply #3. Any <code>#N</code> is a link that opens that entry in the Timeline; your browser's Back button returns.</li>
     </ul>
     <h3>The badge at the top</h3>
     <p class="muted">Intact: no entry changed since it was written (the ledger is hash-chained). Sealed to #N: an external timestamp covers the record up to that entry. Signed: how many of your entries carry your SSH signature (<code>authorship sign setup</code>). It turns red if any entry was changed.</p>

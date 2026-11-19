@@ -35,7 +35,7 @@ One card per claim:
 
 - the claim, quoted from the ledger;
 - a bar with how many of its elements came from you, from you changing Claude's proposal, and from Claude;
-- the list of those elements, each with its origin, its evidence ("tests prove it at #8") and the entry it cites. Click the `#N` to open that entry in the Timeline.
+- the list of those elements, each with its origin, its evidence ("tests prove it at #8") and the entry it cites. Click any `#N`, here or in a label such as "tests prove it at #8", to open that entry in the Timeline; the browser's Back button returns.
 
 Below the claims, **What came from Claude** lists every AI-originated element plainly. An honest record weighs more. Then the stages of the work.
 
@@ -47,9 +47,9 @@ The links between elements come from your confirmations and the automatic classi
 
 The conversation in order, grouped by stage, one sentence per entry: "You proposed an idea, changing Claude's #3.3", "Claude offered 3 options", "Claude ran the tests: they pass after failing".
 
-- **Key moments** (the default) shows what you wrote, the options Claude offered, test results that prove an idea, and the guard's blocks. Claude's routine work is folded into one row per stretch.
+- **Key moments** (the default) shows what you wrote, the options Claude offered, test results that prove an idea, and the guard's blocks. Claude's routine work is folded into one row per stretch, and so are your Review answers; open the row to see each step in place.
 - **Everything** shows every entry, including each tool call.
-- **Search** filters by any word, file name or `#seq`.
+- **Search** filters by any word, file name or `#seq`. It looks through everything, whatever the filter says.
 
 Open any row for its full text, its hash and time, the code change for edits, and how it links to other entries. The address keeps the open entry (`#view=timeline&open=4`), so a link to it can be shared with your attorney alongside the export.
 
@@ -64,6 +64,10 @@ The classifier labels every entry on its own. A label in your favor that it was 
 - **Your answers** lists what you decided, most recent first.
 
 The same can be done from the terminal with `authorship review` (and `authorship review --all`).
+
+## If the page stops updating
+
+The viewer stops when its Claude Code session ends. The page then shows a banner saying it lost contact and since when, and the badge turns gray: what you see may be out of date. It comes back with the next session, or with `authorship restart`.
 
 ## Who labels the entries
 

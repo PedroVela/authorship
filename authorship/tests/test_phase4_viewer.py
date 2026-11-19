@@ -148,7 +148,7 @@ def test_large_responses_are_gzipped_when_accepted(served):
     assert json.loads(gzip.decompress(body))["chain"]["ok"]
     status, headers, body = served.request("GET", "/api/graph")  # no Accept-Encoding: plain
     assert "Content-Encoding" not in headers and json.loads(body)["chain"]["ok"]
-    status, headers, _ = served.request("GET", "/app.css", headers={"Accept-Encoding": "gzip"})
+    status, headers, _ = served.request("GET", "/", headers={"Accept-Encoding": "gzip"})  # index.html, under 16 KB
     assert "Content-Encoding" not in headers  # small files stay plain
 
 
@@ -437,6 +437,66 @@ def test_browser_phone_width_has_no_page_scroll(browser, served):
         time.sleep(0.2)
         assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1"), view
     assert problems == []
+    ctx.close()
+
+
+def test_browser_links_open_entries_and_back_returns(browser, served):
+    ctx, page, problems = open_page(browser, served)
+    wait_js(page, "() => document.querySelector('.claim[data-claim=\"13\"]')")
+    # "tests prove it at #8" opens entry 8 in the Timeline; the browser's Back button returns
+    page.click('.claim[data-claim="13"] .lbl.good a.ref')
+    wait_js(page, "() => document.querySelector('.tl-item[data-seq=\"8\"] .tl-detail')")
+    assert "view=timeline" in page.url and "open=8" in page.url and page.title().startswith("Timeline")
+    page.go_back()
+    wait_js(page, "() => document.getElementById('tab-overview').getAttribute('aria-selected') === 'true'")
+    assert not page.is_visible("#panel-timeline")
+    assert problems == []
+    ctx.close()
+
+
+def test_browser_timeline_folds_open_in_place(browser, served):
+    ctx, page, problems = open_page(browser, served, "view=timeline")
+    wait_js(page, "() => document.querySelectorAll('.tl-stage').length >= 2")
+    # your Review answers stay with the stage they happened in: no trailing "Before any stage"
+    heads = page.eval_on_selector_all(".tl-stage-head h2", "els => els.map(e => e.textContent)")
+    assert heads == ["Exploration", "Prototype"]
+    assert "answered 12 labels in Review" in page.inner_text("#timeline")
+    # routine work opens where it is; the filter stays on Key moments
+    assert not page.query_selector('.tl-item[data-seq="7"]')
+    page.click('.tl-item[data-group="5"] .tl-row')
+    wait_js(page, "() => document.querySelector('.tl-item.sub[data-seq=\"7\"]')")
+    assert page.get_attribute('#tl-filter button[data-f="key"]', "aria-pressed") == "true" and "tl=all" not in page.url
+    assert page.get_attribute('.tl-item[data-group="5"] .tl-row', "aria-expanded") == "true"
+    page.click('.tl-item[data-group="5"] .tl-row')
+    wait_js(page, "() => !document.querySelector('.tl-item[data-seq=\"7\"]')")
+    # a link on record twice (a rule, then your confirmation) is listed once
+    page.click('.tl-item[data-seq="4"] .tl-row')
+    wait_js(page, "() => document.querySelector('.tl-item[data-seq=\"4\"] .tl-detail .rel')")
+    rels = page.eval_on_selector_all('.tl-item[data-seq="4"] .rel li', "els => els.map(e => e.textContent)")
+    assert len([r for r in rels if "#5 (Claude)" in r]) == 1 and len(rels) == len(set(rels))
+    # a search looks through everything, whatever the filter says
+    page.fill("#tl-search", "poller")
+    wait_js(page, "() => document.querySelector('.tl-item[data-seq=\"12\"]')")
+    assert "tl=all" not in page.url
+    assert problems == []
+    ctx.close()
+
+
+def test_browser_phone_shows_every_tab(browser, served):
+    ctx, page, problems = open_page(browser, served, viewport={"width": 380, "height": 800})
+    assert page.evaluate("() => { const t = document.getElementById('tabs'); return t.scrollWidth <= t.clientWidth + 1; }")
+    assert problems == []
+    ctx.close()
+
+
+def test_browser_says_when_it_lost_contact(browser, golden):
+    s = Served(golden)
+    ctx, page, problems = open_page(browser, s)
+    assert not page.is_visible("#offline")
+    s.close()  # the viewer stops, as it does when the Claude Code session ends
+    wait_js(page, "() => !document.getElementById('offline').hidden", timeout=15)
+    assert "lost contact" in page.inner_text("#offline") and "authorship restart" in page.inner_text("#offline")
+    assert "stale" in page.get_attribute("body", "class")
     ctx.close()
 
 

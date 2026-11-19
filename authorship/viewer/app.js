@@ -4,7 +4,8 @@
  *   What you invented  claims, the elements they rest on, who contributed each
  *   Timeline           what happened, in order, grouped by stage; open a row for its text and code change
  *   Review             labels the classifier was unsure of, for the human to answer
- * State lives in the URL hash (#view=timeline&tl=all&q=...&open=12). The only write is POST /api/confirm.
+ * State lives in the URL hash (#view=timeline&tl=all&q=...&open=12). Changing view or opening an entry through a
+ * link adds a history entry, so the browser's Back button works. The only write is POST /api/confirm.
  * All text from the ledger is inserted with textContent, never as HTML.
  */
 (function () {
@@ -58,8 +59,9 @@
     responds_to: 'is answered by', implements: 'is implemented by', supports: 'is shown working by',
     objects_to: 'has failing tests at', rejects: 'is rejected by', supersedes: 'is replaced by', discards: 'is discarded by' };
 
-  var S = { view: 'overview', tl: 'key', q: '', open: null };
-  var G = null, M = null, etag = null, tlShown = TL_PAGE;
+  var VIEW_NAME = { overview: 'What you invented', timeline: 'Timeline', review: 'Review' };
+  var S = { view: 'overview', tl: 'key', q: '', open: null, unfold: {} };
+  var G = null, M = null, etag = null, tlShown = TL_PAGE, lastOk = null;
   var perf = window.__authorshipPerf = { ready: false, renders: 0, view: null };
   window.__authorship = { model: function () { return M; }, state: S };
 
@@ -108,13 +110,14 @@
     S.tl = p.get('tl') === 'all' ? 'all' : 'key';
     S.q = p.get('q') || '';
   }
-  function writeHash() {
+  function writeHash(push) {
     var p = new URLSearchParams();
     p.set('view', S.view);
     if (S.view === 'timeline' && S.open) p.set('open', String(S.open));
     if (S.tl !== 'key') p.set('tl', S.tl);
     if (S.q) p.set('q', S.q);
-    history.replaceState(null, '', location.pathname + location.search + '#' + p.toString());
+    var hash = '#' + p.toString(), url = location.pathname + location.search + hash;
+    if (push && hash !== location.hash) history.pushState(null, '', url); else history.replaceState(null, '', url);
   }
 
   // ------------------------------------------------------------------------------------------
@@ -272,7 +275,8 @@
     rc.textContent = String(n);
     rc.hidden = !n;
     rc.setAttribute('aria-label', n + ' waiting');
-    b.title = 'updated ' + new Date().toLocaleTimeString();
+    lastOk = new Date().toLocaleTimeString();
+    b.title = 'updated ' + lastOk;
   }
 
   // ------------------------------------------------------------------------------------------
@@ -327,11 +331,11 @@
     var ab = clear($('against'));
     if (against.length) {
       ab.appendChild(el('div', { class: 'card against' },
-        el('h2', null, 'What came from Claude'),
+        el('h2', null, el('i', { class: 'sym ai', 'aria-hidden': 'true' }), 'What came from Claude'),
         el('p', { class: 'muted' }, 'Elements Claude proposed, and replies where it added something you did not ask for. Stated plainly: an honest record carries more weight.'),
         el('ul', null, against.map(function (a) {
-          return el('li', null, cite(a.node), ' ', short(a.text, 160),
-            a.changed && a.changed.length ? el('span', { class: 'muted' }, ' — changed by you at #' + a.changed.join(', #')) : null);
+          return el('li', null, entryLink(a.node), ' ', short(a.text, 160),
+            a.changed && a.changed.length ? el('span', { class: 'muted' }, ' — changed by you at ', refList(a.changed)) : null);
         }))));
     }
     var st = clear($('stages-summary'));
@@ -347,7 +351,7 @@
   function claimCard(x) {
     var n = x.counts, total = n.human + n.mixed + n.ai;
     var card = el('article', { class: 'card claim', 'data-claim': x.id });
-    card.appendChild(el('div', { class: 'claim-kicker' }, 'Claim ', cite(x.id)));
+    card.appendChild(el('div', { class: 'claim-kicker' }, 'Claim ', entryLink(x.id)));
     card.appendChild(el('p', { class: 'claim-text' }, x.text));
     if (total) {
       var bar = el('div', { class: 'bar', role: 'img', 'aria-label': n.human + ' from you, ' + n.mixed + ' from you changing Claude, ' + n.ai + ' from Claude' });
@@ -365,9 +369,9 @@
       var els = x.elements.slice().sort(function (a, b) { return order[a.origin] - order[b.origin] || a.seq - b.seq; });
       card.appendChild(el('ul', { class: 'elements' }, els.map(function (e) {
         var extra = [];
-        if (e.builds_on_ai.length) extra.push(el('span', { class: 'lbl' }, 'changes Claude’s #' + e.builds_on_ai.join(', #')));
-        if (e.changed_by.length) extra.push(el('span', { class: 'lbl' }, 'changed by you at #' + e.changed_by.join(', #')));
-        e.evidence.forEach(function (s) { extra.push(el('span', { class: 'lbl good' }, 'tests prove it at #' + s)); });
+        if (e.builds_on_ai.length) extra.push(el('span', { class: 'lbl' }, 'changes Claude’s ', refList(e.builds_on_ai)));
+        if (e.changed_by.length) extra.push(el('span', { class: 'lbl' }, 'changed by you at ', refList(e.changed_by)));
+        e.evidence.forEach(function (s) { extra.push(el('span', { class: 'lbl good' }, 'tests prove it at ', refList([s]))); });
         return el('li', null, whoChip(e.origin === 'human' ? 'you' : e.origin),
           el('div', { class: 'el-text' }, e.text, extra.length ? el('div', { class: 'el-extra' }, extra) : null),
           entryLink(e.node));
@@ -379,10 +383,15 @@
   }
 
   // #N, opening that entry in the Timeline
-  function entryLink(id) {
+  function entryLink(id, child) {
     var seq = nodeSeq(id);
-    return el('a', { href: '#view=timeline&tl=all&open=' + seq, onclick: function (ev) { ev.preventDefault(); openEntry(seq); } }, cite(id));
+    return el('a', { class: 'ref', href: '#view=timeline&tl=all&open=' + seq, onclick: function (ev) {
+      if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;  // a new tab or window stays the browser's business
+      ev.preventDefault(); openEntry(seq);
+    } }, child || cite(id));
   }
+  // "#3.3, #11": each one a link, for the labels that mention other entries
+  function refList(ids) { return ids.map(function (id, i) { return [i ? ', ' : '', entryLink(id, '#' + id)]; }); }
   function openEntry(seq) {
     S.open = seq; S.tl = 'all'; S.q = ''; tlShown = Math.max(tlShown, seq + TL_PAGE);
     go('timeline'); syncControls();
@@ -392,27 +401,39 @@
 
   // ------------------------------------------------------------------------------------------
   // Timeline
+  // Rows to draw. In Key moments, stretches of Claude's routine work and of your Review answers fold into one
+  // row each, which opens in place. A search always looks through everything, whatever the filter says.
   function timelineRows() {
-    var rows = [], q = S.q.toLowerCase(), group = null;
+    var rows = [], q = S.q.toLowerCase(), group = null, keyOnly = S.tl === 'key' && !q;
     M.entries.forEach(function (e) {
       var d = describe(e);
       if (q) {
         var hay = (d.say + ' ' + (e.preview || '') + ' ' + (e.command || '') + ' ' + (e.file || '') + ' #' + e.seq).toLowerCase();
         if (hay.indexOf(q) < 0) return;
       }
-      if (S.tl === 'key' && !d.key) {
-        if (/work/.test(d.cls) && !q) {  // fold routine work between key moments into one row
-          if (!group) { group = { group: true, seqs: [], stage: e.stage, files: {}, fail: false }; rows.push(group); }
+      if (keyOnly) {
+        var kind = !d.key && /work/.test(d.cls) ? 'work' : e.event === 'Confirm' ? 'answers' : null;
+        if (kind) {
+          if (!group || group.kind !== kind) { group = { group: true, kind: kind, seqs: [], items: [], stage: e.stage, files: {}, fail: false }; rows.push(group); }
           group.seqs.push(e.seq);
+          group.items.push({ e: e, d: d, sub: true });
           if (e.file) group.files[e.file] = 1;
           if (/fail/.test(d.say)) group.fail = true;
+          return;
         }
-        return;
+        if (!d.key) return;
       }
       group = null;
       rows.push({ e: e, d: d });
     });
-    return rows;
+    var out = [];
+    rows.forEach(function (r) {
+      if (!r.group) { out.push(r); return; }
+      if (r.kind === 'answers' && r.items.length === 1) { out.push({ e: r.items[0].e, d: r.items[0].d }); return; }
+      out.push(r);
+      if (S.unfold[r.seqs[0]]) r.items.forEach(function (it) { out.push(it); });
+    });
+    return out;
   }
 
   function renderTimeline() {
@@ -423,7 +444,9 @@
     var cur = undefined, list = null, shown = 0;
     for (var i = 0; i < rows.length && shown < tlShown; i++) {
       var r = rows[i], st = stageOf(r) || null;
-      if (r.e && /session/.test(r.d.cls)) st = cur === undefined ? null : cur;
+      // Sessions, seals and your Review answers belong to no stage of their own: they stay with the stage they happened in.
+      var loose = r.group ? r.kind === 'answers' : (r.e.actor === 'system' || r.e.event === 'Confirm' || /session/.test(r.d.cls));
+      if (st == null && loose && cur !== undefined) st = cur;
       if (st !== cur || !list) {
         cur = st;
         var sec = el('section', { class: 'tl-stage' });
@@ -434,7 +457,7 @@
         sec.appendChild(list);
         host.appendChild(sec);
       }
-      list.appendChild(r.group ? groupRow(r) : entryRow(r.e, r.d));
+      list.appendChild(r.group ? groupRow(r) : entryRow(r.e, r.d, r.sub));
       shown++;
     }
     if (rows.length > shown) {
@@ -443,10 +466,11 @@
     }
   }
 
-  function entryRow(e, d) {
+  function rowButton(sel) { var t = document.querySelector(sel + ' .tl-row'); if (t) t.focus({ preventScroll: true }); }
+  function entryRow(e, d, sub) {
     if (/session/.test(d.cls)) return el('li', { class: 'tl-item session', 'data-seq': String(e.seq) }, '#' + e.seq + '  ' + d.say + '  ' + (e.ts || '').slice(0, 16).replace('T', ' '));
     var n = mainNode(e.seq);
-    var li = el('li', { class: 'tl-item ' + d.cls, 'data-seq': String(e.seq) });
+    var li = el('li', { class: 'tl-item ' + d.cls + (sub ? ' sub' : ''), 'data-seq': String(e.seq) });
     var k = kindOf(e);
     var labels = labelChips(n, k && k.kind);
     if (k && k.auto) labels.unshift(el('span', { class: 'lbl auto', title: 'set automatically by the classifier' }, k.kind));
@@ -461,7 +485,10 @@
       })));
     }
     var btn = el('button', { class: 'tl-row', type: 'button', 'aria-expanded': S.open === e.seq ? 'true' : 'false',
-      onclick: function () { S.open = S.open === e.seq ? null : e.seq; writeHash(); renderTimeline(); } },
+      onclick: function () {
+        S.open = S.open === e.seq ? null : e.seq; writeHash(); renderTimeline();
+        rowButton('.tl-item[data-seq="' + e.seq + '"]');  // the row was redrawn: keep the keyboard where it was
+      } },
       el('span', { class: 'tl-seq' }, '#' + e.seq), main,
       el('span', { class: 'tl-labels' }, labels));
     li.appendChild(btn);
@@ -469,14 +496,26 @@
     return li;
   }
 
+  // A folded stretch: Claude's routine work, or your Review answers. It opens in place.
   function groupRow(r) {
-    var files = Object.keys(r.files);
-    var say = 'worked: ' + r.seqs.length + ' step' + (r.seqs.length === 1 ? '' : 's') + (files.length ? ' on ' + files.slice(0, 3).join(', ') + (files.length > 3 ? '…' : '') : '');
-    return el('li', { class: 'tl-item work' },
-      el('button', { class: 'tl-row', type: 'button', title: 'Show every step', onclick: function () { S.tl = 'all'; writeHash(); syncControls(); renderTimeline(); } },
-        el('span', { class: 'tl-seq' }, '#' + r.seqs[0] + (r.seqs.length > 1 ? '–' + r.seqs[r.seqs.length - 1] : '')),
-        el('div', { class: 'tl-main' }, el('div', { class: 'tl-say' }, whoChip('ai'), ' ', say),
-          el('div', { class: 'tl-text' }, r.fail ? 'Some steps failed. Choose “Everything” to see each one.' : 'Choose “Everything” to see each step.')),
+    var first = r.seqs[0], n = r.seqs.length, open = !!S.unfold[first], say, hint;
+    if (r.kind === 'answers') {
+      say = 'answered ' + n + ' labels in Review';
+      hint = open ? 'Hide the answers' : 'Open to see each answer';
+    } else {
+      var files = Object.keys(r.files);
+      say = 'worked: ' + n + ' step' + (n === 1 ? '' : 's') + (files.length ? ' on ' + files.slice(0, 3).join(', ') + (files.length > 3 ? '…' : '') : '');
+      hint = (r.fail ? 'Some steps failed. ' : '') + (open ? 'Hide the steps' : 'Open to see each step');
+    }
+    return el('li', { class: 'tl-item work', 'data-group': String(first) },
+      el('button', { class: 'tl-row', type: 'button', 'aria-expanded': open ? 'true' : 'false', onclick: function () {
+        if (open) delete S.unfold[first]; else S.unfold[first] = 1;
+        renderTimeline();
+        rowButton('.tl-item[data-group="' + first + '"]');
+      } },
+        el('span', { class: 'tl-seq' }, '#' + first + (n > 1 ? '–' + r.seqs[n - 1] : '')),
+        el('div', { class: 'tl-main' }, el('div', { class: 'tl-say' }, whoChip(r.kind === 'answers' ? 'you' : 'ai'), ' ', say),
+          el('div', { class: 'tl-text' }, hint)),
         el('span', { class: 'tl-labels' })));
   }
 
@@ -504,8 +543,17 @@
       return x.source === 'auto' ? el('span', { class: 'muted' }, ' (automatic)') :
         x.source === 'annotation' ? el('span', { class: 'muted' }, ' (suggested; waiting for you in Review)') : null;
     }
-    (M.out[id] || []).forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_OUT[x.type] || x.type, ' ', relLink(x.dst), how(x))); });
-    (M.inn[id] || []).forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_IN[x.type] || x.type, ' ', relLink(x.src), how(x))); });
+    // The same link can be on record twice (found by a rule, then confirmed by you): say it once, in its strongest state.
+    function once(list, other) {
+      var weight = { annotation: 0, auto: 1 }, best = {}, order = [];
+      list.forEach(function (x) {
+        var k = x.type + '|' + x[other], w = weight[x.source] == null ? 2 : weight[x.source];
+        if (!(k in best)) { order.push(k); best[k] = { x: x, w: w }; } else if (w > best[k].w) best[k] = { x: x, w: w };
+      });
+      return order.map(function (k) { return best[k].x; });
+    }
+    once(M.out[id] || [], 'dst').forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_OUT[x.type] || x.type, ' ', relLink(x.dst), how(x))); });
+    once(M.inn[id] || [], 'src').forEach(function (x) { rels.appendChild(el('li', null, 'This ', REL_IN[x.type] || x.type, ' ', relLink(x.src), how(x))); });
     if (rels.childNodes.length) { body.appendChild(el('h3', null, 'Links')); body.appendChild(rels); }
     box.appendChild(body);
     if (!(n && n.option != null) && (e.text_len || 0) > 0) {
@@ -583,7 +631,7 @@
     if (!conf.length) done.appendChild(el('p', { class: 'muted' }, 'No answers yet.'));
     conf.slice(0, 50).forEach(function (e) {
       var verb = { accept: 'Yes', reject: 'No', edit: 'Changed' }[e.decision] || e.decision;
-      done.appendChild(el('div', { class: 'done-row' }, el('span', { class: 'cite' }, '#' + e.seq),
+      done.appendChild(el('div', { class: 'done-row' }, entryLink(e.seq, el('span', { class: 'cite' }, '#' + e.seq)),
         el('strong', null, verb), plainLabel(e.label, e.target_seq) + (e.edited_label ? ' \u2192 ' + plainLabel(e.edited_label, e.target_seq) : ''),
         el('span', { class: 'muted' }, (e.ts || '').slice(0, 16).replace('T', ' '))));
     });
@@ -595,9 +643,10 @@
     card.appendChild(el('div', { class: 'q-head' }, el('span', { class: 'q-text' }, question(item)),
       item.score != null ? el('span', { class: 'conf' }, 'classifier ' + pct(item.score) + ' sure') : null,
       isAuto ? el('span', { class: 'lbl auto' }, 'counted automatically') : null));
-    if (n) card.appendChild(el('div', { class: 'q-entry' }, cite(n.id), ' ', short(n.label, 220)));
+    // Each cited entry is a link, so the answer can be given with the whole entry in view rather than a clipped line.
+    if (n) card.appendChild(el('div', { class: 'q-entry' }, entryLink(n.id), ' ', short(n.label, 220)));
     var parts = item.label.split(':');
-    if (parts[0] === 'edge' && M.node[parts[3]]) card.appendChild(el('div', { class: 'q-entry' }, cite(parts[3]), ' ', short(M.node[parts[3]].label, 220)));
+    if (parts[0] === 'edge' && M.node[parts[3]]) card.appendChild(el('div', { class: 'q-entry' }, entryLink(parts[3]), ' ', short(M.node[parts[3]].label, 220)));
     var result = el('span', { class: 'muted', role: 'status' });
     var editSel = el('select', { 'aria-label': 'Change to' });
     if (parts[0] === 'milestone') MS_TYPES.forEach(function (t) { if ('milestone:' + t !== item.label) editSel.appendChild(el('option', { value: 'milestone:' + t }, MS_NAME[t])); });
@@ -631,12 +680,19 @@
     }).then(function (res) {
       if (res.status === 200) { result.textContent = 'Recorded as #' + res.body.seq + '.'; etag = null; setTimeout(refresh, 300); }
       else { result.textContent = 'Not recorded (' + res.status + '): ' + (res.body.error || 'refused'); card.querySelectorAll('button').forEach(function (b) { b.disabled = false; }); }
-    }).catch(function () { result.textContent = 'Not recorded: the viewer is not reachable.'; });
+    }).catch(function () {
+      result.textContent = 'Not recorded: the viewer is not reachable. Try again once the page reconnects.';
+      card.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+    });
   }
 
   // ------------------------------------------------------------------------------------------
   // Navigation, polling, startup
-  function go(view) { S.view = view; writeHash(); show(); }
+  function go(view) {
+    var changed = S.view !== view;
+    S.view = view; writeHash(true); show();
+    if (changed) window.scrollTo(0, 0);
+  }
   function show() {
     VIEWS.forEach(function (v) {
       var on = v === S.view;
@@ -645,6 +701,7 @@
       tab.tabIndex = on ? 0 : -1;
       $('panel-' + v).hidden = !on;
     });
+    document.title = VIEW_NAME[S.view] + ' · Authorship record';
     if (!G) return;
     perf.view = S.view;
     if (S.view === 'overview') renderOverview();
@@ -664,6 +721,7 @@
       etag = r.headers.get('ETag');
       return r.json();
     }).then(function (g) {
+      setStale(false);
       if (!g) return;
       G = g;
       M = buildModel(g);
@@ -672,7 +730,17 @@
       show();
       perf.ready = true;
       perf.renders++;
-    }).catch(function (err) { $('chain-badge').title = 'cannot reach the viewer (' + err.message + ')'; });
+    }, function () { setStale(true); });
+  }
+  // The viewer stops when its Claude Code session ends. A page that keeps a green badge over data nobody is
+  // checking any more would mislead, so say when the page was last in contact and how to get it back.
+  function setStale(on) {
+    var b = $('offline');
+    if (on === !b.hidden) return;
+    document.body.classList.toggle('stale', on);
+    b.hidden = !on;
+    if (on) b.textContent = (lastOk ? 'This page lost contact with the viewer. What you see is from ' + lastOk + ' and may be out of date. '
+      : 'This page cannot reach the viewer. ') + 'It comes back with the next Claude Code session, or run “authorship restart” in your own terminal.';
   }
 
   function start() {
