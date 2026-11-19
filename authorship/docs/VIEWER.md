@@ -84,4 +84,4 @@ Each answer needs the session secret. `authorship open` passes it in the address
 
 Claude cannot read the secret or reach the port: the guard blocks both. Details in [THREATS.md](THREATS.md).
 
-The page loads nothing from the internet and has no library: about 70 KB of HTML, CSS and JavaScript. Responses over 16 KB are gzipped when the browser accepts it; antivirus that inspects local HTTP (Avast's Web Shield, for one) otherwise slows large records to a crawl.
+The page loads nothing from the internet and has no library. Responses over 16 KB are gzipped when the browser accepts it; antivirus that inspects local HTTP (Avast's Web Shield, for one) otherwise slows large records to a crawl.

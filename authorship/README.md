@@ -174,10 +174,8 @@ It refuses to export a record that does not verify. Seal first (`authorship seal
 On by default, as soon as the project is initialized. Full description: [docs/CLASSIFICATION.md](docs/CLASSIFICATION.md).
 
 - **What it does.** Each new prompt, note and reply is classified in the background by the annotator. It finds the kind (problem, idea, hypothesis, decision, claim, discard, instruction), a new technical element, the stance toward an earlier element, its parents, maturity, and a change of stage. The answers become tags, stages, milestones and lineage edges.
-- **Backends.** The default is Claude, through the `claude` command and your existing login: no setup, and no new party receives the text. You can choose any OpenRouter model with structured output instead, or Jev (TypeSafe's evaluator: faster, with measured probabilities). Both send the text to a new party. With no choice saved, a Jev key in the environment selects Jev.
-- **Thresholds.** A label in your favor counts automatically from 0.80 and waits in `authorship review` between 0.50 and 0.80. A label against you (an AI-origin element) counts from 0.50.
+- **Backends, thresholds and setup.** In [CLASSIFICATION.md](docs/CLASSIFICATION.md). In short: Claude by default, with no new party; `authorship classifier` shows what is in use and how to change it.
 - **Where it goes.** Answers go to `annotations.jsonl`, with the backend, the model id, a prompt hash and every confidence. They never go to the ledger.
-- **Setup.** `authorship classifier` shows the backend in use and the steps to change it. In short: `authorship classifier use claude|openrouter|jev [MODEL]`, then `authorship restart`. OpenRouter and Jev need their key in your shell profile. Full steps: [CLASSIFICATION.md](docs/CLASSIFICATION.md#setting-it-up).
 - **Corrections.** A typed tag wins over the classifier. `authorship review --all` rejects or edits any automatic label, as a human `Confirm` entry.
 
 Deterministic rules run alongside it, offline:

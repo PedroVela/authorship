@@ -114,22 +114,9 @@ Guide: [docs/VIEWER.md](authorship/docs/VIEWER.md).
 
 By default the classifier is Claude itself, run in the background through the `claude` command with your existing login. No setup is needed, and the text goes to no one new: Claude Code already sends it to Anthropic. A 7-entry session takes about 16 s and US$0.03.
 
-If you set a [Jev](https://docs.typesafe.ai/) key, Jev is used instead. The key can come from TypeSafe, the maker (`TYPESAFE_API_KEY`); from [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) (`OPENROUTER_API_KEY`); or from the Vercel AI Gateway (`AI_GATEWAY_API_KEY`). It is faster and cheaper, and returns measured probabilities. But it sends the text of your invention to a new party, so set the key only if that is acceptable before filing.
+You can use another backend instead: any OpenRouter model that answers in structured JSON, or [Jev](https://docs.typesafe.ai/). Both send the text of your invention to a new party, and a Jev key in your environment selects Jev unless you chose a backend. Decide that before filing.
 
-You can also use any model on [OpenRouter](https://openrouter.ai/models) that answers in structured JSON, with the same prompt as Claude. That also sends the text to a new party.
-
-To switch, in your own terminal:
-
-```bash
-authorship classifier use claude haiku                          # another Claude model
-authorship classifier models openrouter gemini                  # list OpenRouter models, filtered
-authorship classifier use openrouter google/gemini-3.8-flash    # needs OPENROUTER_API_KEY in your shell profile
-authorship classifier use jev --provider openrouter             # Jev; needs a Jev key
-authorship restart                                              # the annotator picks up the new settings
-authorship classifier --test                                    # confirms which backend answers
-```
-
-`authorship classifier` shows what is in use at any time, and so does the viewer's **Help**. When the text goes to another provider, a strip under the viewer's tabs says so, with a **How to change it** link.
+`authorship classifier` shows what is in use and how to change it, and so does the viewer's **Help**. Steps: [Setting it up](authorship/docs/CLASSIFICATION.md#setting-it-up).
 
 The record leans against you, never for you:
 - A label in your favor counts only from 0.80 confidence.
@@ -384,6 +371,6 @@ To pause recording: `claude plugin disable authorship@authorship-dev` (the ledge
 | Know what is stored, and what is not | [What is stored](authorship/README.md#what-is-stored) | reference |
 | Understand how entries are classified, and the thresholds | [Automatic classification](authorship/docs/CLASSIFICATION.md) | explanation |
 | Know what the record proves, legally and technically | [Legal notes](authorship/docs/LEGAL-NOTES.md), [Threat model](authorship/docs/THREATS.md) | explanation |
-| See why the build differs from its spec | [Build spec](AUTHORSHIP_PLUGIN_SPEC.md), [Deviations](authorship/docs/DEVIATIONS.md) | explanation |
+| Maintain the plugin: why the build differs from its spec | [Build spec](AUTHORSHIP_PLUGIN_SPEC.md), [Deviations](authorship/docs/DEVIATIONS.md) | explanation |
 
 Development: `python3 -m venv .venv`, then `.venv/bin/pip install pytest playwright` (on Windows, `.venv\Scripts\pip`), `python -m playwright install chromium`, `python -m pytest -q authorship/tests` and `claude plugin validate ./authorship`. CI runs the suite on Ubuntu, macOS and Windows, and the browser tests on Ubuntu.
