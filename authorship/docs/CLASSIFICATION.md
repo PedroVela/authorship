@@ -2,7 +2,7 @@
 
 Once a project is initialized, nobody has to tag anything. In the background, a classifier reads each new entry and works out:
 
-- what the entry is: a problem, an idea, a decision, a claim, a discarded approach, or a plain instruction;
+- what the entry is: a problem, an idea, a hypothesis, a decision, a claim, a discarded approach, or a plain instruction;
 - whether it brings in a new technical element;
 - which earlier element it builds on, modifies, accepts or rejects;
 - whether the work moved into a new stage.
@@ -24,14 +24,14 @@ Each request carries:
 
 - the entries to classify (up to 6 per request, 4,000 characters each);
 - the 8 entries before them (500 characters each);
-- up to 60 earlier elements the answer may point to, with their ids (`4`, or `3.2` for option 2 of reply #3);
+- up to 60 earlier elements the answer may point to (220 characters each), with their ids (`4`, or `3.2` for option 2 of reply #3);
 - the stage the work is in.
 
 ## Backends
 
 | | Claude (default) | OpenRouter (any model) | Jev |
 |---|---|---|---|
-| When it is used | Always, unless another is chosen or a Jev key is set | When chosen: `authorship classifier use openrouter MODEL` | When chosen, or when `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set and nothing is chosen |
+| When it is used | Always, unless another is chosen or a Jev key is set | When chosen: `authorship classifier use openrouter [MODEL]` | When chosen, or when `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` is set and nothing is chosen |
 | Setup | None: it uses the `claude` command and the login you already have | `OPENROUTER_API_KEY` | A key from [TypeSafe](https://docs.typesafe.ai/), [OpenRouter](https://openrouter.ai/keys) or the Vercel AI Gateway |
 | Who receives the text | Anthropic, which already receives it during the session | OpenRouter and the model's provider: parties that did not have it before | TypeSafe, plus OpenRouter or Vercel when you go through them: parties that did not have it before |
 | Confidence values | Stated by the model | Stated by the model | Measured probabilities, with the full vector stored |
@@ -52,11 +52,11 @@ So it cannot read or change the project, and it is not recorded in the ledger. S
 
 ### OpenRouter backend
 
-The same system prompt and JSON schema as the Claude backend, sent to OpenRouter's chat completions API with strict structured output. Any model that supports structured output works; `authorship classifier models openrouter [FILTER]` lists them with their input price. The plugin asks for zero-data-retention endpoints, no data collection, and only providers that support every parameter it sends. The model OpenRouter reports, and the cost, are stored with each answer.
+The same system prompt and JSON schema as the Claude backend, sent to OpenRouter's chat completions API with strict structured output. Any model that supports structured output works; `authorship classifier models openrouter [FILTER]` lists them with their input price. Default model: `anthropic/claude-sonnet-5`; `classifier use` refuses a model that is not on that list. The plugin asks for zero-data-retention endpoints, no data collection, and only providers that support every parameter it sends. The model OpenRouter reports is stored with each answer.
 
 ### Jev backend
 
-Each entry is one Jev request: choice questions for kind, stance, target and stage, a noul question for "new element", and a score question for maturity. Jev cannot write text, so there is no summary. Jev returns one probability vector over all candidate targets, so each element the entry builds on gets a share of it; any candidate with probability 0.30 or more counts as a parent.
+Each entry is one Jev request: choice questions for kind, stance, target and stage, a noul question for "new element", and a score question for maturity. A reply of Claude's gets one choice question: what the reply does. The target question offers the 40 most recent earlier elements. Jev cannot write text, so there is no summary. Jev returns one probability vector over all candidate targets, so each element the entry builds on gets a share of it; any candidate with probability 0.30 or more counts as a parent (up to 5).
 
 Jev is the same model through three providers. They differ in who bills you and who sees the text on the way:
 
@@ -126,7 +126,7 @@ authorship classifier use auto   # forget the choice: Jev if a Jev key is set, e
 authorship restart               # after any of these
 ```
 
-The same settings as environment variables, which win over the saved choice: `AUTHORSHIP_AUTO_BACKEND` (`claude`, `openrouter`, `jev`), `AUTHORSHIP_AUTO_MODEL` (Claude or OpenRouter model), `AUTHORSHIP_JEV_PROVIDER`, `AUTHORSHIP_JEV_MODEL`, and `AUTHORSHIP_AUTO=0`.
+The same settings as environment variables, which win over the saved choice: `AUTHORSHIP_AUTO_BACKEND` (`claude`, `openrouter`, `jev`), `AUTHORSHIP_AUTO_MODEL` (Claude or OpenRouter model), `AUTHORSHIP_JEV_PROVIDER`, `AUTHORSHIP_JEV_MODEL`, and `AUTHORSHIP_AUTO=0` (`AUTHORSHIP_AUTO=1` turns labels back on over a saved `off`, with Claude).
 
 ## From answers to labels
 
@@ -140,12 +140,12 @@ Thresholds are asymmetric, so the record never errs in your favor:
 How each answer is used:
 
 - **Tags.** A kind with confidence 0.70 or more becomes a tag such as `#idea`. It is shown as `#idea~` in `authorship log` and with a dashed outline in the viewer. It is only added to entries with no tag of yours.
-- **Conception.** It follows the spec's rule: the entry brings a new element (`new_element`) and originates or reshapes an earlier one. This applies whether the entry is called an idea, a decision or a claim. Score: the smaller of the two confidences.
+- **Conception.** It follows the spec's rule: the entry brings a new element (`new_element`) and originates, modifies or rejects an earlier one; an entry classified as an idea needs no stance. This applies whether the entry is called an idea, a hypothesis, a decision or a claim. Score: the smaller of `new_element` and the stance confidence (the kind confidence for an idea).
 - **AI-origin elements.** Two cases raise one:
   - you accept an AI option as proposed (stance "accepts", the target written by Claude);
   - a reply where Claude introduced a mechanism you did not ask for.
-- **Lineage.** "Modifies", "extends", "rejects" or "accepts" toward a target, plus every "builds on" parent, become edges. Edges need 0.50 (0.30 for a Jev parent). They are stored with source `auto`. Claim genealogy, disclosures and the report follow these edges together with the ones you confirmed.
-- **Stages.** A stage change counts only when it differs from the stage the work is already in.
+- **Lineage.** "Modifies", "extends", "rejects" or "accepts" toward a target, plus every "builds on" parent, become edges. Edges need 0.50, the smaller of the stance and target confidences (0.30 for a Jev parent). They are stored with source `auto`. Claim genealogy, disclosures and the report follow these edges together with the ones you confirmed.
+- **Stages.** A stage change counts only when it differs from the stage the work is already in, and never on an entry with a `#stage` tag of yours. With Jev it also needs 0.60.
 - **Reduction to practice.** The rule "first passing test after a failing one, on files edited since the idea" anchors on ideas found by the classifier as well as tagged ones.
 
 Every result is written to `.authorship/annotations.jsonl` with:
@@ -160,7 +160,7 @@ Nothing goes into the ledger: the ledger holds evidence; annotations hold opinio
 ## Correcting it
 
 - **Type a tag.** A tag you write (`#idea`, `#claim`, `#stage Prototype` ...) always wins over the classifier for that entry.
-- **`authorship review`.** It walks through what is waiting (favorable labels between 0.50 and 0.80). Accept, reject or edit each one; your decision becomes a `Confirm` entry in the ledger, in your name.
+- **`authorship review`.** It walks through what is waiting (favorable labels between 0.50 and 0.80). Accept, reject or edit each one; your decision becomes a `Confirm` entry in the ledger, in your name. `--list` prints the queue without asking.
 - **`authorship review --all`.** It also walks through the automatic labels and links already counted, so you can reject or edit any of them. A rejection is a human entry, and the label or link stops counting.
 
 Milestone states, as shown everywhere: `confirmed` (by you), `automatic`, `pending` (waiting for you), `rejected`.
@@ -183,6 +183,6 @@ These run offline, always, whatever the backend:
 
 - `off`: `AUTHORSHIP_AUTO=0`, or `authorship classifier use off`.
 - `no-backend`: no Jev key and no `claude` command on the PATH.
-- `error`: the backend failed (network, rate limit); details in `.authorship/errors.log`. Nothing is lost: unclassified entries are retried the next time the ledger changes.
+- `error`: the backend failed (network, rate limit, a chosen backend whose key is not set); details in `.authorship/errors.log`. Nothing is lost: unclassified entries are retried the next time the ledger changes.
 
-The older Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`, from the spec) still exists for calibration work. Its labels are suggestions that always wait for confirmation, and it requires the consent note typed in a terminal (`annotator.py consent`).
+The older Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`, from the spec) still exists for calibration work. Its labels are suggestions that always wait for confirmation, and it requires a Jev key and the consent note typed in a terminal (`annotator.py consent`).

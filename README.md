@@ -70,11 +70,11 @@ License: [MIT](LICENSE).
 
 ```text
 $ authorship log
-#2     10-01 12:11  you     prompt   #problem~ reconciliation of QR payments takes 40 s because the bank is queried ...
-#4     10-01 12:11  you     prompt   #idea~ instead of TTL, invalidate by the statement sequence number
-#10    10-01 12:11  you     note     #discard~ Bloom filter on transaction IDs: false positives lose payments
-#11    10-01 12:11  you     prompt   #decision~ long-poll the sequence endpoint every 2 s, not the webhook, ...
-#13    10-01 12:11  you     prompt   #claim~ method that detects the absence of new transactions by comparing ...
+#2     10-01 12:11  you     prompt   #problem~  reconciliation of QR payments takes 40 s because the bank is queried one by one
+#4     10-01 12:11  you     prompt   #idea~  instead of TTL, invalidate by the statement sequence number
+#10    10-01 12:11  you     note     #discard~  Bloom filter on transaction IDs: false positives lose payments
+#11    10-01 12:11  you     prompt   #decision~  long-poll the sequence endpoint every 2 s, not the webhook, because the bank does not s…
+#13    10-01 12:11  you     prompt   #claim~  method that detects the absence of new transactions by comparing a monotonic statement cou…
 (#tag~ = set automatically by the classifier)
 
 $ authorship status
@@ -101,8 +101,10 @@ Add a note in your own name when something happened off the chat, for example an
 
 `authorship open` shows the record in your browser. One line at the top says whether it can be trusted (intact, how far it is sealed, how much is signed), then three tabs:
 - **What you invented**: each claim, and who contributed each element.
-- **Timeline**: what happened, in order; open any entry for its text and code change.
+- **Timeline**: what happened, in order; open any entry for its text and code change. Claude's routine work and your Review answers fold into one row each; open the row to see every step. Search looks through everything.
 - **Review**: labels to check.
+
+Any `#N` is a link that opens that entry in the Timeline; the browser's Back button returns. If the page loses contact with the viewer, it says so and the top line turns gray.
 
 ![What you invented: a claim, the elements it rests on, and who contributed each](authorship/docs/images/viewer-overview.png)
 
@@ -309,7 +311,7 @@ authorship seal                     # seal now, without waiting for the session 
 export AUTHORSHIP_ANCHOR=0          # turn off sealing at session end
 ```
 
-The status line and the viewer's header show how far the record is sealed (`sealed to #N`). Entries after that are protected by the hash chain, but not yet by an external timestamp.
+The viewer's header shows how far the record is sealed (`sealed to #N`); the status line shows how many entries are not sealed yet (`14 unsealed`). Entries after that are protected by the hash chain, but not yet by an external timestamp.
 
 ### What you see at the end
 
@@ -348,14 +350,14 @@ Under "What came from Claude", it lists #3.3 plainly.
 - #4 (0f08ea152e7d): tests pass at #8 (c950e60985b1) after failing, on files edited since the idea.
 ```
 
-Hashes differ in each run; `tests/validate_citations.py` checks that every one resolves.
+Hashes differ in each run; `authorship/tests/validate_citations.py` checks that every one resolves.
 
 ## If something goes wrong
 
 | What you see | What to do |
 |---|---|
-| `refuses to run from Claude Code` | `note`, `review`, `seal`, `open`, `sign`, `restart` and `classifier use` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
-| The viewer did not open | `authorship open`. The page explains itself under "Help"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
+| `refuses to run from Claude Code` | `note`, `review`, `seal`, `open`, `sign`, `restart`, `doctor --fix`, `classifier use` and `classifier --test` act in your name. Run them in a separate terminal, not through Claude and not with `!`. |
+| The viewer did not open | `authorship open`. If it says `viewer is not running`, or the page says it lost contact with the viewer: `authorship restart`. The page explains itself under "Help"; the full guide is [docs/VIEWER.md](authorship/docs/VIEWER.md). |
 | Something does not work | `authorship doctor` checks every piece and prints the fix; `authorship doctor --fix` applies the ones it can. |
 | Claude cannot look things up in the ledger | Restart Claude Code; `/mcp` inside Claude Code shows the lookup server's state. It starts with `python3`, or on Windows with the Python saved in `AUTHORSHIP_PYTHON` by `/authorship:init`. |
 | `verify` says `signatures: ... INVALID at #N` | Entry N carries a signature that does not match the keys in `allowed_signers`. Do not edit anything; tell your attorney. |

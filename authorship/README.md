@@ -93,22 +93,27 @@ Your side of the system is one command, `authorship`, installed once with `cli.p
 
 ```bash
 authorship note "#discard Bloom filter on transaction IDs: false positives lose payments"
-authorship log              # recent prompts, notes and confirmations; --all for every entry, -n N
+authorship log              # recent prompts, notes and confirmations (20); --all for every entry, -n N
 authorship status           # authorship ✓ 214 | 12 unsealed | 3 to review, plus the classifier's state
-authorship review           # decide the labels the classifier was unsure of; --all to correct any automatic one
-authorship verify --anchors
+authorship review           # decide the labels the classifier was unsure of; --all to correct any automatic one; --list only prints them
+authorship verify --anchors # check the chain and the signatures; --anchors also the timestamps; --json prints JSON
 authorship seal             # anchor the current head now (also done at every session end)
-authorship export           # a bundle anyone can verify without the plugin (see Export)
+authorship export           # a bundle anyone can verify without the plugin (see Export); --out DIR, --no-zip
 authorship sign setup       # sign your entries with your SSH key (see Signatures)
 authorship open             # the viewer, with its session secret
 authorship classifier       # who labels the entries, where the text goes, how to change it (--test checks it)
-authorship classifier use openrouter google/gemini-3.8-flash   # or: use claude haiku | use jev | use off | use auto
-authorship classifier models openrouter [FILTER]               # models to choose from
+authorship classifier use openrouter google/gemini-3.8-flash   # or: use claude haiku | use jev [--provider P] | use off | use auto
+authorship classifier models openrouter [FILTER]               # models to choose from (also: models claude, models jev)
 authorship restart          # restart the annotator and viewer, to pick up changed settings
 authorship doctor           # check every piece of the setup; --fix installs or starts what is missing
+authorship init             # set up the current project from a terminal, like /authorship:init
+authorship install          # write the authorship command; --bin-dir DIR for another folder
+authorship help             # the list of commands
 ```
 
-`note`, `review`, `seal`, `open`, `restart`, `sign`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status`, `verify` and `export` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
+`--project DIR` names the project instead of searching for it, on every command that works on one. `note --author NAME` sets the author of one note.
+
+`note`, `review`, `seal`, `open`, `restart`, `sign setup`, `sign off`, `classifier --test`, `classifier use` and `doctor --fix` act in your name, so they refuse to run from Claude Code (including `!` commands typed inside it): use a separate terminal. `log`, `status`, `verify`, `export` and `sign status` are read-only and work anywhere. Tier 1 consent is recorded with `python3 <plugin>/scripts/annotator.py consent`, where `<plugin>` is the folder `cli.py` lives in, minus `scripts/`.
 
 ### Skills
 
@@ -125,8 +130,10 @@ The `inventorship-reviewer` subagent writes a contribution analysis for one clai
 
 The viewer starts in the background at session start, on `127.0.0.1` only, and opens your browser once (`authorship open` brings it back). A status line (intact, sealed to #N, N of M signed), then three tabs, in plain words:
 - **What you invented**: each claim, the elements it rests on, and who contributed each: you, Claude, or you changing Claude's proposal.
-- **Timeline**: what happened, in order, by stage; open an entry for its text, links and code change.
+- **Timeline**: what happened, in order, by stage; open an entry for its text, links and code change. Claude's routine work and your Review answers fold into one row that opens in place. Search looks through everything, whatever the filter says.
 - **Review**: labels to check.
+
+Every `#N` is a link to that entry, also inside a label such as "tests prove it at #8"; the browser's Back button returns. When the viewer stops, the page says it lost contact and since when.
 
 You are a blue circle and Claude an orange square. Review answers are the only writes, and only with the session secret. Full guide with screenshots: [docs/VIEWER.md](docs/VIEWER.md).
 
@@ -135,7 +142,7 @@ You are a blue circle and Claude an orange square. Review answers are the only w
 The chain and the timestamps prove what was written and when, not who wrote it. To add that, sign your entries with an SSH key, once, in your own terminal:
 
 ```bash
-authorship sign setup              # git's SSH signing key, else ~/.ssh/id_ed25519; or --key PATH
+authorship sign setup              # git's SSH signing key, else ~/.ssh/id_ed25519; or --key PATH, --principal EMAIL
 authorship verify                  # ... signatures: 14 of 14 human entries signed by SHA256:... (you@example.com); all valid
 ```
 
@@ -180,7 +187,7 @@ Deterministic rules run alongside it, offline:
 - numbered alternatives become one AI option each;
 - session boundaries.
 
-The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remains for calibration. Its labels always wait for confirmation, and it needs a consent typed with `annotator.py consent`.
+The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remains for calibration. Its labels always wait for confirmation, and it needs a consent typed with `annotator.py consent`. `annotator.py calibrate` (human only) has you label about 100 entries and reports precision and recall.
 
 ## Configuration
 
@@ -190,8 +197,10 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_KEEP_TOOL_RESULTS` | unset | `1`: stored transcripts keep what tools returned (see [What is stored](#what-is-stored)) |
 | `AUTHORSHIP_ANCHOR` | `1` | Seal at the end of every session that added work; `0` to turn it off |
 | `AUTHORSHIP_TSA` | `https://freetsa.org/tsr` | RFC 3161 authority; `off` to disable |
+| `AUTHORSHIP_TSA_CAFILE` / `AUTHORSHIP_TSA_CERT` | unset | CA file and certificate that verify the authority's responses; copied into `anchors/tsa/<host>/`. Needed for an authority other than the default, whose certificates are fetched |
 | `AUTHORSHIP_OTS` | `1` | `0`: skip OpenTimestamps |
-| `AUTHORSHIP_AUTO` | `1` | `0`: no automatic classification (tags and rules still work) |
+| `AUTHORSHIP_OTS_HOME` | `~/.local/share/authorship/ots` | Where `doctor --fix` installs the `ots` client |
+| `AUTHORSHIP_AUTO` | `1` | `0`: no automatic classification (tags and rules still work); `1`: on, even after `classifier use off` |
 | `AUTHORSHIP_AUTO_BACKEND` | saved choice | `claude`, `openrouter` or `jev`; with no choice, Jev when a Jev key is set, else Claude |
 | `AUTHORSHIP_AUTO_MODEL` | `claude-sonnet-5` / `anthropic/claude-sonnet-5` | Model for the Claude or OpenRouter backend |
 | `AUTHORSHIP_JEV_MODEL` | `jev-1.13.0` | Jev version |
@@ -205,8 +214,12 @@ The spec's Tier 1 mode (`AUTHORSHIP_JEV=1` with `scripts/questions.toml`) remain
 | `AUTHORSHIP_VIEWER_PORT` | `47291` | First port tried |
 | `AUTHORSHIP_VIEWER_OPEN` | `1` | `0`: do not open the browser |
 | `AUTHORSHIP_NO_DAEMONS` | unset | `1`: do not start the annotator and viewer |
-| `AUTHORSHIP_AUTHOR` | `$USER` | Author name on notes |
+| `AUTHORSHIP_AUTHOR` | `$GIT_AUTHOR_NAME`, else `$USER` | Author name on notes |
 | `AUTHORSHIP_HINT` | `1` | `0`: never suggest `/authorship:init` in uninitialized repositories |
+| `AUTHORSHIP_PROJECT_DIR` | found from the current folder | The project to use, for the command, the status line and the lookup (MCP) server |
+| `AUTHORSHIP_BIN_DIR` | `~/.local/bin` | Where the `authorship` and `ots` commands go |
+| `AUTHORSHIP_CLAUDE_BIN` | `claude` on the PATH | The `claude` command the Claude backend runs |
+| `AUTHORSHIP_OPENROUTER_ENDPOINT` / `AUTHORSHIP_JEV_ENDPOINT` | the provider's URL | Another endpoint for the OpenRouter backend or for Jev |
 
 ## What is stored
 
@@ -239,7 +252,7 @@ Commit `ledger.jsonl`, `blobs/` and `anchors/`: the chain needs the blobs it cit
 ├── allowed_signers     public keys that signed human entries (ssh-keygen format)
 ├── annotations.jsonl   machine opinions (derived)
 ├── index.sqlite        query index (derived, gitignored)
-├── run/                pids, viewer port and secret (gitignored)
+├── run/                pids, locks, viewer port and secret (gitignored)
 └── errors.log
 ```
 

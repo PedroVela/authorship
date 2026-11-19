@@ -732,7 +732,7 @@
       perf.renders++;
     }, function () { setStale(true); });
   }
-  // The viewer stops when its Claude Code session ends. A page that keeps a green badge over data nobody is
+  // The viewer can stop under an open page (a restart, a reboot). A page that keeps a green badge over data nobody is
   // checking any more would mislead, so say when the page was last in contact and how to get it back.
   function setStale(on) {
     var b = $('offline');

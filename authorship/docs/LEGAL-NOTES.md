@@ -18,8 +18,8 @@ The United States and Paraguay are first-to-file systems: priority comes from th
 
 - Keep the repository private. Do not push `.authorship/` or `authorship-exports/` to a public remote.
 - The automatic classifier sends entry text to a model. By default that model is Claude, through your existing Claude Code login. The same text already goes to Anthropic during the session, so no new party receives it.
-- Setting a Jev key (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY`) switches the classifier to Jev, a third-party service, and from then on the text of your invention goes to it (and, through OpenRouter or Vercel, also passes through them). Do that only after thinking about confidentiality, preferably with zero data retention (the plugin asks for it through OpenRouter and the Vercel AI Gateway) or under a confidentiality agreement. `AUTHORSHIP_AUTO=0` keeps everything local except the Claude Code session itself.
-- Anchoring sends only a hash of the ledger head to the timestamp authority, never ledger text.
+- Setting a Jev key (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY`) switches the classifier to Jev, a third-party service, unless you chose a backend with `authorship classifier use`, and from then on the text of your invention goes to it (and, through OpenRouter or Vercel, also passes through them). Do that only after thinking about confidentiality, preferably with zero data retention (the plugin asks for it through OpenRouter and the Vercel AI Gateway) or under a confidentiality agreement. Choosing an OpenRouter model (`authorship classifier use openrouter`) sends the text to OpenRouter and that model's provider, also with zero data retention requested. `AUTHORSHIP_AUTO=0` or `authorship classifier use off` keeps everything local except the Claude Code session itself.
+- Anchoring sends only a hash to the timestamp authority and to OpenTimestamps, never ledger text: the hash of a small file that names the project folder, the entry number and the ledger head's hash.
 
 ## Confirmations matter
 
@@ -33,11 +33,11 @@ An attorney will give more weight to labels you confirmed. Before relying on a d
 
 ## Timestamps
 
-RFC 3161 responses and OpenTimestamps proofs show that the ledger head existed at a given time. They do not show who wrote an entry or that its content is true. The hash chain, the guard and the human-only commands keep Claude from writing in your name; with `authorship sign setup`, each of your entries also carries your SSH signature, which shows it was made where your private key was. Publish the key's fingerprint somewhere a third party can check (your GitHub SSH keys, or a letter to your attorney), since the list of allowed keys is stored next to the ledger. Keep the anchor files (`.authorship/anchors/`) with the repository.
+RFC 3161 responses and OpenTimestamps proofs show that the ledger head existed at a given time. They do not show who wrote an entry or that its content is true. The hash chain, the guard and the human-only commands keep Claude from writing in your name; after `authorship sign setup`, each new entry of yours (prompt, note, confirmation) also carries your SSH signature, which shows it was made where your private key was. Publish the key's fingerprint somewhere a third party can check (your GitHub SSH keys, or a letter to your attorney), since the list of allowed keys is stored next to the ledger. Keep the anchor files (`.authorship/anchors/`) with the repository.
 
 ## Handing it over
 
-`authorship export` writes a bundle your attorney or an expert can check without installing anything but Python: the record, the timestamp proofs, the signatures, a short verifier and the format. Seal right before exporting, and keep the zip with your filing papers.
+`authorship export` writes a bundle your attorney or an expert can check without installing anything but Python: the record, the timestamp proofs, the signatures, a short verifier and the format. Python alone checks the chain and the content; the timestamps and signatures also need `openssl`, `ots` and `ssh-keygen`, and the verifier lists every check it could not run. Export refuses a record whose chain does not verify. Seal right before exporting, and keep the zip with your filing papers.
 
 ## Drafts
 

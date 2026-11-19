@@ -10,7 +10,9 @@ To open it again: `authorship open` in your own terminal. A page opened any othe
 | **Timeline** | What happened, in order? |
 | **Review** | Which labels should I check? The badge says how many wait. |
 
-The line at the top answers the first question anyone asks of a record, whether it can be trusted: **Record intact · 40 entries · sealed to #38 · 12 of 12 signed**. It turns red, with a banner, if any entry was changed after it was written. **Help** explains the tabs, the symbols and who labels the entries; **Report** is the draft for your attorney.
+The tabs stay on top while you scroll. On a phone they share the width, so all three show.
+
+The line at the top answers the first question anyone asks of a record, whether it can be trusted: **Record intact · 40 entries · sealed to #38 · 12 of 12 signed**. It says "not sealed yet" before the first seal, and counts signatures only once an entry is signed. It turns red (**Record broken at #N**), with a banner, if any entry was changed after it was written. **Help** explains the tabs, the symbols and who labels the entries; **Report** is the draft for your attorney.
 
 ## Symbols
 
@@ -20,7 +22,7 @@ The same everywhere. Identity is never shown by color alone: a shape and a word 
 |---|---|
 | Blue circle, "You" | Written by you |
 | Orange square, "Claude" | Written by Claude |
-| Green, "You, changing Claude" | Your element that changes something Claude proposed |
+| Green circle, "You, changing Claude" | Your element that changes something Claude proposed |
 | Dashed outline, struck-through text | Discarded or rejected |
 | Solid label (`idea`) | Typed by you, confirmed by you, or found by a deterministic rule |
 | Dashed label (`idea`) | Set automatically by the classifier |
@@ -59,15 +61,16 @@ Open any row for its full text, its hash and time, the code change for edits, an
 
 The classifier labels every entry on its own. A label in your favor that it was not sure of (0.50 to 0.80) waits here as a question, for example "Is #11 a maturity jump: the idea became more definite?".
 
-- **Yes**, **No** and **Change…** each record your answer in the ledger as a `Confirm` entry, in your name (and signed, if you set up signing).
+- Each question shows how sure the classifier was and the entries it is about. Their `#N` are links that open the entry in the Timeline.
+- **Yes**, **No** and **Change…** (pick another label, then **Save change**) each record your answer in the ledger as a `Confirm` entry, in your name (and signed, if you set up signing).
 - **Counted automatically** lists every label and link already counted, so you can mark one **Not right** or change it.
-- **Your answers** lists what you decided, most recent first.
+- **Your answers** lists the last 50 things you decided, most recent first. Each `#N` opens that answer in the Timeline.
 
 The same can be done from the terminal with `authorship review` (and `authorship review --all`).
 
 ## If the page stops updating
 
-The viewer stops when its Claude Code session ends. The page then shows a banner saying it lost contact and since when, and the badge turns gray: what you see may be out of date. It comes back with the next session, or with `authorship restart`.
+The viewer keeps running in the background until it is stopped or the machine restarts. If the page can no longer reach it, the page shows a banner saying it lost contact and since when, and the badge turns gray: what you see may be out of date. It comes back with the next session, or with `authorship restart`.
 
 ## Who labels the entries
 
@@ -75,10 +78,10 @@ By default Claude does, through your own login, and the page says nothing about 
 
 ## Security
 
-The page binds to `127.0.0.1` and rejects any other `Host` header. It writes nothing except Review answers.
+The page binds to `127.0.0.1` and rejects any `Host` header that is not its own address (`127.0.0.1` or `localhost`, with its port). It writes nothing except Review answers.
 
-Each answer needs the session secret. `authorship open` passes it in the address, and the page moves it out of the URL at once. Each answer also needs the page's own `Origin`.
+Each answer needs the session secret. `authorship open` passes it in the address, and the page moves it out of the URL at once. Each answer also needs the page's own `Origin` and a JSON content type.
 
 Claude cannot read the secret or reach the port: the guard blocks both. Details in [THREATS.md](THREATS.md).
 
-The page loads nothing from the internet and has no library: about 65 KB of HTML, CSS and JavaScript. Responses over 16 KB are gzipped when the browser accepts it; antivirus that inspects local HTTP (Avast's Web Shield, for one) otherwise slows large records to a crawl.
+The page loads nothing from the internet and has no library: about 70 KB of HTML, CSS and JavaScript. Responses over 16 KB are gzipped when the browser accepts it; antivirus that inspects local HTTP (Avast's Web Shield, for one) otherwise slows large records to a crawl.
